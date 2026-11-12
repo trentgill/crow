@@ -12,8 +12,10 @@
 // linker symbols
 extern char _sdata;
 extern char _ebss;
-extern char end;     // start of the heap
-extern char _estack; // top of the stack
+extern char _sheap;  // the heap's region
+extern char _eheap;
+extern char _sstack; // the stack's region
+extern char _estack;
 void* _sbrk( int incr );
 
 #define STACK_PAINT 0xC0DEC0DE
@@ -68,9 +70,9 @@ void Telemetry_init( void )
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
-    // paint the unused gap between heap and stack to find the stack's low-water mark
+    // paint the unused part of the stack to find its low-water mark
     register uint32_t* sp __asm("sp");
-    uint32_t* p = (uint32_t*)(((uint32_t)_sbrk(0) + 3) & ~3u);
+    uint32_t* p = (uint32_t*)&_sstack;
     uint32_t* top = sp - 64; // stay clear of the live frames
     while( p < top ){ *p++ = STACK_PAINT; }
 
@@ -107,11 +109,10 @@ void Telemetry_event_depth( int depth )
     if( depth > event_max ){ event_max = depth; }
 }
 
-// lowest address the stack has reached. the heap grows up into the painted
-// region, so begin looking just above it.
+// lowest address the stack has reached
 static uint32_t stack_low_water( void )
 {
-    uint32_t* p = (uint32_t*)(((uint32_t)_sbrk(0) + 3) & ~3u);
+    uint32_t* p = (uint32_t*)&_sstack;
     while( p < (uint32_t*)&_estack && *p == STACK_PAINT ){ p++; }
     return (uint32_t)p;
 }
@@ -131,8 +132,9 @@ static void setnum( lua_State* L, const char* k, float v )
 __attribute__((noinline)) static int overflow_stack( volatile int n )
 {
     volatile char pad[256];
-    pad[0] = (char)n;
-    return overflow_stack( n + 1 ) + pad[0];
+    pad[0] = 1;
+    if( pad[0] ){ n = overflow_stack( n + 1 ); } // never false, but the compiler can't know
+    return n + pad[0];
 }
 
 static void test_fault( int kind )
@@ -198,11 +200,12 @@ int Telemetry_lua( lua_State* L )
     setnum( L, "dsp_load"    , (win > 0.0f) ? (float)d_sum / win : 0.0f );
         // ram (bytes)
     setint( L, "ram_static"  , (uint32_t)(&_ebss - &_sdata) );
-    setint( L, "heap_arena"  , heap_top - (uint32_t)&end ); // claimed from the system
+    setint( L, "heap_arena"  , heap_top - (uint32_t)&_sheap ); // claimed from the system
     setint( L, "heap_used"   , mi.uordblks );
     setint( L, "heap_free"   , mi.fordblks );               // free inside the arena
     setint( L, "stack_peak"  , (uint32_t)&_estack - low );
-    setint( L, "ram_gap"     , low - heap_top );            // never touched by either
+    setint( L, "stack_size"  , (uint32_t)(&_estack - &_sstack) );
+    setint( L, "ram_gap"     , (uint32_t)&_eheap - heap_top ); // the heap can still grow by this
     setint( L, "lua_bytes"   , lua_gc( L, LUA_GCCOUNT, 0 ) * 1024
                              + lua_gc( L, LUA_GCCOUNTB, 0 ) );
         // serial & events

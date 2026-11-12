@@ -30,19 +30,30 @@
 /* Entry Point */
 ENTRY(Reset_Handler)
 
-/* Highest address of the user mode stack */
-_estack = 0x20040000;    /* end of 256K RAM */
-
-/* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0x200;      /* required amount of heap  */
-_Min_Stack_Size = 0x10000; /* required amount of stack */
+/* RAM layout
+ *
+ * DTCM  0x20000000  64K   wired straight to the core: no bus wait, never cached,
+ *                         and reachable by DMA. holds the stack & every static.
+ * SRAM  0x20010000  192K  SRAM1 + SRAM2. all of it is the heap (lua).
+ *
+ * The stack sits at the very bottom of RAM and grows down, so running out of
+ * it faults on the unmapped space below 0x20000000 instead of quietly
+ * overwriting the heap or the statics.
+ *
+ * 0x20006666 is the word the bootloader checks after a reset (lib/bootloader.c
+ * and the bootloader's main.c). Nothing may live there: a reset while it happened
+ * to hold the magic value would land in DFU mode.
+ */
+_Stack_Size   = 0x6660;
+_Boot_Word    = 0x20006666;
 
 /* Specify the memory areas */
 MEMORY
 {
   /* FLASH (rx)      : ORIGIN = 0x00200000, LENGTH = 512K */ /* ITCM interface */
   FLASH (rx)      : ORIGIN = 0x08020000, LENGTH = 384K /* AXIM interface */
-  RAM (xrw)       : ORIGIN = 0x20000000, LENGTH = 256K
+  DTCM (xrw)      : ORIGIN = 0x20000000, LENGTH = 64K
+  SRAM (xrw)      : ORIGIN = 0x20010000, LENGTH = 192K
   /* MEMORY_B1 (rx)  : ORIGIN = 0x60000000, LENGTH = 0K */
   /* CCMRAM (rw)     : ORIGIN = 0x10000000, LENGTH = 64K */
 }
@@ -112,6 +123,17 @@ SECTIONS
     PROVIDE_HIDDEN (__fini_array_end = .);
   } >FLASH
 
+  /* the stack, then the bootloader's word, before anything else in RAM */
+  .stack (NOLOAD) :
+  {
+    _sstack = .;
+    . = . + _Stack_Size;
+    _estack = .;
+    . = . + 0x10; /* 0x20006660..0x2000666F stays empty */
+  } >DTCM
+  ASSERT( _estack <= _Boot_Word && _Boot_Word + 4 <= ADDR(.stack) + SIZEOF(.stack)
+        , "the bootloader's word must sit in the reserved gap above the stack" )
+
   /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);
 
@@ -125,7 +147,7 @@ SECTIONS
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
-  } >RAM AT> FLASH
+  } >DTCM AT> FLASH
 
   
   /* Uninitialized data section */
@@ -142,18 +164,11 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
-  } >RAM
+  } >DTCM
 
-  /* User_heap_stack section, used to check that there is enough RAM left */
-  ._user_heap_stack :
-  {
-    . = ALIGN(8);
-    PROVIDE ( end = . );
-    PROVIDE ( _end = . );
-    . = . + _Min_Heap_Size;
-    . = . + _Min_Stack_Size;
-    . = ALIGN(8);
-  } >RAM
+  /* the heap: see _sbrk() in syscalls.c */
+  _sheap = ORIGIN(SRAM);
+  _eheap = ORIGIN(SRAM) + LENGTH(SRAM);
 
   
 

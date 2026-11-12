@@ -4,7 +4,9 @@
 #include "ll/debug_usart.h"
 
 extern int errno;
-register char * stack_ptr __asm("sp");
+// the heap has SRAM1 & SRAM2 to itself (see stm32_flash.ld)
+extern char _sheap;
+extern char _eheap;
 
 // TODO implement a str_buffer here to avoid overflowing the TRACE pin?
 
@@ -33,15 +35,14 @@ int fputc(int ch, FILE *f)
 
 void* _sbrk(int incr)
 {
-    extern char end __asm("end");
     static char *heap_end;
     char *prev_heap_end;
 
     if (heap_end == 0)
-        heap_end = &end;
+        heap_end = &_sheap;
 
     prev_heap_end = heap_end;
-    if (heap_end + incr > stack_ptr)
+    if (heap_end + incr > &_eheap || heap_end + incr < &_sheap)
     {
         errno = ENOMEM;
         return (void*) -1;
