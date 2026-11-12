@@ -9,6 +9,7 @@
 
 #include "../submodules/lua/src/lauxlib.h"
 #include "crashreport.h"
+#include "lua_watchdog.h"
 
 // linker symbols
 extern char _sdata;
@@ -200,6 +201,7 @@ int Telemetry_lua( lua_State* L )
     setint( L, "crash_kind"  , crashreport_kind() );  // 0 unless this boot follows a crash
     setint( L, "crash_pc"    , crashreport_pc() );
     setint( L, "crash_count" , crashreport_count() ); // crash resets since power-on
+    setint( L, "wd_kills"    , Lua_watchdog_kills() ); // scripts stopped by the watchdog
         // serial & events
     setint( L, "rx_bytes"    , tm_counters[TM_rx_bytes] );
     setint( L, "tx_bytes"    , tm_counters[TM_tx_bytes] );

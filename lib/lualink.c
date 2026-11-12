@@ -25,6 +25,7 @@
 #include "../ll/system.h"   // getUID_Word()
 #include "../ll/i2c.h"      // I2C_SetTimings(u8)
 #include "lib/events.h"     // event_t event_post()
+#include "lib/lua_watchdog.h" // Lua_watchdog_*()
 #include "stm32f7xx_hal.h"  // HAL_GetTick()
 #include "stm32f7xx_it.h"   // CPU_GetCount()
 #include "lib/crashreport.h" // crashreport_lua_panic()
@@ -37,10 +38,6 @@
 #include "telemetry.h"
 
 
-#define WATCHDOG_FREQ      0x100000 // ~1s how often we run the watchdog
-#define WATCHDOG_COUNT     2        // how many watchdogs before 'frozen'
-
-
 // Basic crow script
 #include "build/First.h"
 
@@ -50,7 +47,6 @@ static float Lua_check_memory( void );
 static int Lua_call_usercode( lua_State* L, int nargs, int nresults );
 static int Lua_handle_error( lua_State* L );
 static int Lua_panic( lua_State* L );
-static void timeouthook( lua_State* L, lua_Debug* ar );
 
 // Handler prototypes
 void L_handle_asl_done( event_t* e );
@@ -82,6 +78,7 @@ lua_State* Lua_Init(void)
 {
     L = luaL_newstate();
     lua_atpanic(L, Lua_panic);
+    Lua_watchdog_init(L); // before any coroutine is created
     luaL_openlibs(L);
     Lua_linkctolua(L);
     l_bootstrap_init(L); // redefine dofile(), print(), load crowlib
@@ -690,7 +687,9 @@ static int _calibrate_set( lua_State* L )
 }
 static int _calibrate_save( lua_State* L )
 {
+    uint32_t t = Lua_watchdog_exempt_begin(); // flash erase doesn't count
     CAL_WriteFlash();
+    Lua_watchdog_exempt_end(t);
     return 0;
 }
 
@@ -959,17 +958,6 @@ void Lua_crowbegin( void )
 }
 
 
-// Watchdog timer for infinite looped Lua scripts
-volatile int watchdog = WATCHDOG_COUNT;
-static void timeouthook( lua_State* L, lua_Debug* ar )
-{
-    if( --watchdog <= 0 ){
-        Caw_send_luachunk("CPU timed out.");
-        lua_sethook(L, timeouthook, LUA_MASKLINE, 0); // error until top
-        luaL_error(L, "user code timeout exceeded");
-    }
-}
-
 static int Lua_handle_error( lua_State *L )
 {
     const char *msg = lua_tostring( L, 1 );
@@ -992,8 +980,7 @@ static int Lua_handle_error( lua_State *L )
 
 static int Lua_call_usercode( lua_State* L, int nargs, int nresults )
 {
-    lua_sethook(L, timeouthook, LUA_MASKCOUNT, WATCHDOG_FREQ); // reset timeout hook
-    watchdog = WATCHDOG_COUNT; // reset timeout hook counter
+    Lua_watchdog_enter(); // starts deadline & budget, unless nested
 
     int errFunc = lua_gettop(L) - nargs;
     lua_pushcfunction( L, Lua_handle_error );
@@ -1001,7 +988,7 @@ static int Lua_call_usercode( lua_State* L, int nargs, int nresults )
     int status = lua_pcall(L, nargs, nresults, errFunc);
     lua_remove( L, errFunc );
 
-    lua_sethook(L, timeouthook, 0, 0);
+    Lua_watchdog_exit(); // top-level call ends: hooks back to normal
 
     return status;
 }
