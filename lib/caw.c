@@ -5,6 +5,7 @@
 
 #include "../usbd/usbd_main.h"
 #include "../ll/status_led.h" // for blinking led when tx/rx data
+#include "telemetry.h"
 
 #define USB_RX_BUFFER 2048
 static char reader[USB_RX_BUFFER];
@@ -181,6 +182,7 @@ C_cmd_t Caw_try_receive( void )
         }
         if( (pReader + len) >= USB_RX_BUFFER ){ // overflow protection
             pReader = 0;
+            Telemetry_count( TM_rx_overflow, 1 );
             Caw_send_luachunk("!chunk too long!");
             printf("!chunk too long!\n");
             //multiline = 0; // FIXME can we know whether this is high / low?

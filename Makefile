@@ -64,6 +64,12 @@ ifeq ($(TRACE), 1)
 	CFLAGS += -DTRACE
 endif
 
+# telemetry: sys_telemetry() & the measurement hooks behind tests/hw. (=0) removes them
+TELEMETRY ?= 1
+ifeq ($(TELEMETRY), 1)
+	CFLAGS += -DTELEMETRY
+endif
+
 # release: if (=1), disable all debug prints
 R ?= 0
 ifeq ($(R), 1)

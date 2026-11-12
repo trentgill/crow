@@ -49,6 +49,7 @@
 #include "usbd_main.h"
 
 #include "../ll/timers.h"
+#include "../lib/telemetry.h"
 
 // Private define
 #define APP_RX_DATA_SIZE  256 // tmp buffer until the parser runs in main loop
@@ -175,8 +176,10 @@ void USB_tx_enqueue( uint8_t* buf, uint32_t len )
     // Check USB_tx_is_ready()==1 if you need to be sure no data is lost.
     // especially if *streaming* data to the CDC.
     if( (UserTxDataLen + len) >= APP_TX_DATA_SIZE ){
+        Telemetry_count( TM_tx_dropped, len - (APP_TX_DATA_SIZE - UserTxDataLen) );
         len = APP_TX_DATA_SIZE - UserTxDataLen; // stop buffer overflow
     }
+    Telemetry_count( TM_tx_bytes, len );
     if( len == 0 ){
         // FIXME? Likely means we're trying to TX when no usb device connected
         //printf("TxBuf full\n"); // TODO memcpy will still run (can rm this warning)
@@ -230,6 +233,7 @@ static void USB_Timer_Callback( int count )
 static int8_t CDC_Itf_Receive( uint8_t* buf, uint32_t *len )
 {
     uint32_t length = *len;
+    Telemetry_count( TM_rx_bytes, length );
     if( (UserRxDataLen + length) >= APP_RX_DATA_SIZE ){
         length = APP_RX_DATA_SIZE - UserRxDataLen; // stop buffer overflow
     }

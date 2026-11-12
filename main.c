@@ -18,11 +18,13 @@
 #include "lib/bootloader.h" // bootloader_enter(), bootloader_restart()
 #include "lib/flash.h" // Flash_clear_user_script()
 #include "stm32f7xx_it.h" // CPU_count;
+#include "lib/telemetry.h"
 
 
 int main(void)
 {
     system_init();
+    Telemetry_init();
 
     // Debugging
     Debug_Pin_Init();
@@ -56,6 +58,7 @@ int main(void)
     uint32_t last_tick = HAL_GetTick();
     while(1){
         CPU_count++;
+        Telemetry_loop();
         U_PrintNow();
         switch( Caw_try_receive() ){ // true on pressing 'enter'
             case C_repl:        REPL_eval( Caw_get_read()

@@ -33,6 +33,7 @@
 // thus keeping the lua VM as free as possible
 #include "l_bootstrap.h"
 #include "l_crowlib.h"
+#include "telemetry.h"
 
 
 #define WATCHDOG_FREQ      0x100000 // ~1s how often we run the watchdog
@@ -880,6 +881,10 @@ static const struct luaL_Reg libCrow[]=
         // public
     , { "pub_view_in"       , _pub_view_in      }
     , { "pub_view_out"      , _pub_view_out     }
+#ifdef TELEMETRY
+        // test suite
+    , { "sys_telemetry"     , Telemetry_lua     }
+#endif
 
     , { NULL               , NULL              }
     };

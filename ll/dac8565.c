@@ -6,6 +6,7 @@
 
 #include "adda.h"   // ADDA_BlockProcess()
 #include "wrMath.h" // lim_f()
+#include "../lib/telemetry.h"
 
 #define DAC_BUFFER_COUNT 2 // ping-pong
 
@@ -155,13 +156,17 @@ void DAC_PickleBlock( uint32_t* dac_pickle_ptr
 void HAL_I2S_TxHalfCpltCallback( I2S_HandleTypeDef *hi2s )
 {
     Debug_Pin_Set(1);
+    uint32_t t = TM_CYCLES();
     ADDA_BlockProcess( samples );
+    Telemetry_dsp( TM_CYCLES() - t );
     Debug_Pin_Set(0);
 }
 void HAL_I2S_TxCpltCallback( I2S_HandleTypeDef *hi2s )
 {
     Debug_Pin_Set(1);
+    uint32_t t = TM_CYCLES();
     ADDA_BlockProcess( &samples[samp_count/2] );
+    Telemetry_dsp( TM_CYCLES() - t );
     Debug_Pin_Set(0);
 }
 void HAL_I2S_ErrorCallback( I2S_HandleTypeDef *hi2s )
