@@ -15,3 +15,5 @@ gcc $CFLAGS -o "$out/watchdog_test" tests/host/watchdog_test.c lib/lua_watchdog.
 
 gcc $CFLAGS -o "$out/clock_test" tests/host/clock_test.c lib/clock.c lib/clock_ll.c lib/events.c -lm
 "$out/clock_test"
+
+sh tests/host/run_caw.sh

@@ -49,10 +49,19 @@
 #include "usbd_main.h"
 
 #include "../lib/telemetry.h"
+#include "../lib/lua_watchdog.h" // Lua_watchdog_exempt_end()
 
 // Private define
-#define APP_RX_DATA_SIZE  256 // tmp buffer until the parser runs in main loop
 #define CONNECTION_DELAY  500 // millisecond delay before sending buffer after connect
+
+// RX is a ring of packets, each stored as a length byte, a gap byte (ms since
+// the packet before it, or since the endpoint was re-armed after a stall: tells
+// the parser which packets belong to one host write) and its bytes, so the
+// parser still sees where every packet ended. The OUT endpoint is only re-armed
+// while another full packet fits: otherwise the controller NAKs and the host's
+// write waits, until the main loop has taken enough out.
+#define RX_RING_SIZE      2048 // power of two: the indices below run freely
+#define RX_PACKET         CDC_DATA_FS_OUT_PACKET_SIZE
 
 // TX is one byte ring drained by a chain of IN transfers: each transfer's
 // completion (CDC_Itf_TransmitCplt) starts the next, and data queued while the
@@ -86,8 +95,15 @@ USBD_CDC_LineCodingTypeDef LineCoding = { 115200  // baud rate
                                         , 0x08    // nb. of bits 8
                                         };
 
-static uint8_t UserRxBuffer[APP_RX_DATA_SIZE];
-static uint32_t UserRxDataLen  = 0;
+static uint8_t UserRxBuffer[RX_PACKET]; // where the endpoint receives
+
+// Single producer (CDC_Itf_Receive, in the OTG interrupt), single consumer
+// (USB_rx_dequeue, main loop, which blocks interrupts while it takes a packet).
+static uint8_t           rx_ring[RX_RING_SIZE];
+static volatile uint32_t rx_head = 0;     // where the next packet is written
+static volatile uint32_t rx_tail = 0;     // the oldest packet
+static volatile uint8_t  rx_stalled = 0;  // endpoint left un-armed: ring was full
+static volatile uint32_t rx_last_tick = 0; // last arrival, or re-arm after a stall
 
 // The TX state is shared by producers (thread mode, and interrupts up to the
 // audio DMA at priority 5) and the consumer in the OTG interrupt (priority 6),
@@ -118,8 +134,8 @@ extern USBD_HandleTypeDef  USBD_Device;
 void CDC_clear_buffers( void )
 {
     BLOCK_IRQS(
-        for( int i=0; i<APP_RX_DATA_SIZE; i++ ){ UserRxBuffer[i] = 0; }
-        UserRxDataLen  = 0;
+        rx_head = 0;
+        rx_tail = 0;
         tx_head = 0;
         tx_tail = 0;
         tx_streaming = 0;
@@ -138,6 +154,13 @@ static int8_t CDC_Itf_Init(void)
     // the ring itself is kept: output queued before any host was listening
     // (eg. the boot text after a software reset) goes out once one reads.
     BLOCK_IRQS(
+        // a new host starts with an empty receive ring. the class arms the
+        // endpoint itself straight after this returns
+        rx_head = 0;
+        rx_tail = 0;
+        rx_stalled = 0;
+        rx_last_tick = HAL_GetTick();
+
         tx_connect_tick = HAL_GetTick();
         tx_holdoff = 1;
         tx_in_flight = 0; // a fresh class handle has no transfer outstanding
@@ -157,6 +180,7 @@ static int8_t CDC_Itf_DeInit(void)
     // the endpoint is closed, so a transfer still on the wire will never
     // complete. its bytes stay queued and are sent on the next configure.
     BLOCK_IRQS(
+        rx_stalled = 0; // the endpoint is closed. Init arms it again
         tx_in_flight = 0;
         tx_in_flight_stream = 0;
     );
@@ -313,6 +337,12 @@ static uint8_t tx_wait( uint32_t* progress, uint32_t* since )
     return 1;
 }
 
+// a script made to wait for the host is not charged for that time
+static void tx_waited( uint32_t since_tick )
+{
+    if( __get_IPSR() == 0 ){ Lua_watchdog_exempt_end( since_tick ); }
+}
+
 // producers in thread mode and in interrupts both count
 static void tx_count( uint8_t queued, uint32_t len )
 {
@@ -334,6 +364,7 @@ void USB_tx_enqueue( const uint8_t* lead, uint32_t lead_len
     uint8_t  queued   = 0;
     uint32_t progress = tx_progress;
     uint32_t since    = HAL_GetTick();
+    uint32_t entered  = since;
     while(1){
         BLOCK_IRQS(
             if( (TX_RING_SIZE - (tx_head - tx_tail)) >= total ){
@@ -347,6 +378,7 @@ void USB_tx_enqueue( const uint8_t* lead, uint32_t lead_len
          || total > TX_RING_SIZE // can never fit
          || !tx_wait( &progress, &since ) ){ break; }
     }
+    tx_waited( entered );
     tx_count( queued, total );
     if( queued ){ USB_tx_kick(); }
 }
@@ -366,6 +398,7 @@ void USB_tx_stream( const uint8_t* buf, uint32_t len
     uint8_t  queued   = 0;
     uint32_t progress = tx_progress;
     uint32_t since    = HAL_GetTick();
+    uint32_t entered  = since;
     while(1){
         BLOCK_IRQS(
             if( !tx_streaming
@@ -381,6 +414,7 @@ void USB_tx_stream( const uint8_t* buf, uint32_t len
         if( queued
          || !tx_wait( &progress, &since ) ){ break; }
     }
+    tx_waited( entered );
     tx_count( queued, len + tail_len );
     if( queued ){ USB_tx_kick(); }
 }
@@ -390,8 +424,10 @@ void USB_tx_stream_wait( void )
 {
     uint32_t progress = tx_progress;
     uint32_t since    = HAL_GetTick();
+    uint32_t entered  = since;
     while( tx_streaming
         && tx_wait( &progress, &since ) ){}
+    tx_waited( entered );
 }
 
 int USB_tx_is_ready( void )
@@ -430,44 +466,82 @@ static int8_t CDC_Itf_TransmitCplt(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 }
 
 // RECEIVE
-// on interrupt add to the queue
+
+// arm the OUT endpoint if another full packet fits, else leave it NAKing
+// caller has interrupts blocked, or is the OTG interrupt
+static void rx_arm_locked( void )
+{
+    if( (RX_RING_SIZE - (rx_head - rx_tail)) >= 2 + RX_PACKET ){
+        rx_stalled = 0;
+        USBD_CDC_ReceivePacket( &USBD_Device );
+    } else {
+        rx_stalled = 1;
+    }
+}
+
+// on interrupt add the packet to the ring
 static int8_t CDC_Itf_Receive( uint8_t* buf, uint32_t *len )
 {
     uint32_t length = *len;
     Telemetry_count( TM_rx_bytes, length );
-    if( (UserRxDataLen + length) >= APP_RX_DATA_SIZE ){
-        length = APP_RX_DATA_SIZE - UserRxDataLen; // stop buffer overflow
+    if( length > RX_PACKET ){ length = RX_PACKET; } // not at full speed
+    if( length ){ // zero-length packets carry nothing
+        // there is room: the endpoint was only armed with a packet's worth free
+        uint32_t now = HAL_GetTick();
+        uint32_t gap = now - rx_last_tick;
+        rx_ring[rx_head & (RX_RING_SIZE-1)] = (uint8_t)length;
+        rx_ring[(rx_head + 1) & (RX_RING_SIZE-1)] = (gap > 255) ? 255 : (uint8_t)gap;
+        for( uint32_t i=0; i<length; i++ ){
+            rx_ring[(rx_head + 2 + i) & (RX_RING_SIZE-1)] = buf[i];
+        }
+        rx_head += 2 + length;
+        rx_last_tick = now;
     }
-    memcpy( &UserRxBuffer[UserRxDataLen]
-          , buf
-          , length
-          );
-    UserRxDataLen += length;
+    rx_arm_locked();
     return USBD_OK;
 }
 
-uint8_t USB_rx_dequeue_LOCK( uint8_t** buf, uint32_t* len )
+// copy the oldest packet into buf (RX_PACKET bytes), and the ms between its
+// arrival and the one before into *gap. returns its length, 0 if none
+uint32_t USB_rx_dequeue( uint8_t* buf, uint8_t* gap )
 {
-    if( UserRxDataLen ){ // non-zero means data is present
-        *buf = UserRxBuffer;
-        *len = UserRxDataLen;
-        UserRxDataLen = 0; // reset rx array
-        return 1;
-    }
-    return 0;
+    uint32_t len = 0;
+    BLOCK_IRQS(
+        if( rx_head != rx_tail ){
+            len  = rx_ring[rx_tail & (RX_RING_SIZE-1)];
+            *gap = rx_ring[(rx_tail + 1) & (RX_RING_SIZE-1)];
+            for( uint32_t i=0; i<len; i++ ){
+                buf[i] = rx_ring[(rx_tail + 2 + i) & (RX_RING_SIZE-1)];
+            }
+            rx_tail += 2 + len;
+        }
+    );
+    USB_rx_rearm();
+    return len;
 }
 
-// ONLY call this at the end of `if( USB_rx_dequeue_LOCK ){}`
-void USB_rx_dequeue_UNLOCK( void )
+// let the host send again once a full packet fits
+void USB_rx_rearm( void )
 {
-    if( !UserRxDataLen ){ // zero means data has been processed
-uint32_t old_primask = __get_PRIMASK();
-__disable_irq();
-        USBD_CDC_ReceivePacket(&USBD_Device); // Receive the next packet
-__set_PRIMASK( old_primask );
-    } else {
-        printf("data in rx_queue means something's wrong.\n");
-    }
+    BLOCK_IRQS(
+        if( rx_stalled && USBD_Device.pClassData != NULL ){
+            rx_arm_locked();
+            // the host could not send until now: count the wait from here
+            if( !rx_stalled ){ rx_last_tick = HAL_GetTick(); }
+        }
+    );
+}
+
+// a packet is waiting
+uint8_t USB_rx_pending( void )
+{
+    return rx_head != rx_tail;
+}
+
+// tick of the last packet's arrival (or of re-arming after a stall)
+uint32_t USB_rx_last_tick( void )
+{
+    return rx_last_tick;
 }
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

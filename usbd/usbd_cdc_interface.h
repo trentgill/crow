@@ -68,8 +68,10 @@ void USB_tx_stream( const uint8_t* buf, uint32_t len
 void USB_tx_stream_wait( void );
 void USB_tx_kick( void );
 int USB_tx_is_ready( void );
-uint8_t USB_rx_dequeue_LOCK( uint8_t** buf, uint32_t* len );
-void USB_rx_dequeue_UNLOCK( void );
+uint32_t USB_rx_dequeue( uint8_t* buf, uint8_t* gap );
+void USB_rx_rearm( void );
+uint8_t USB_rx_pending( void );
+uint32_t USB_rx_last_tick( void );
 
 
 /* Exported macro ------------------------------------------------------------*/

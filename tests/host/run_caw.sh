@@ -8,6 +8,6 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 ${CC:-cc} -std=c99 -Wall -Werror -g -O1 -DTELEMETRY \
     -I"$here/stub_usb" \
-    "$here/caw_test.c" "$root/lib/caw.c" "$root/usbd/usbd_cdc_interface.c" \
+    "$here/caw_test.c" "$root/usbd/usbd_cdc_interface.c" \
     -o "$tmp/caw_test"
 "$tmp/caw_test"
