@@ -60,6 +60,14 @@ void event_next( void ){
 }
 
 
+// number of events that can still be posted before the queue is full
+int event_queue_space( void )
+{
+    int used = putIdx - getIdx;
+    if( used < 0 ){ used += MAX_EVENTS; }
+    return (MAX_EVENTS - 1) - used; // one slot is always left empty
+}
+
 // add event to queue, return success status
 uint8_t event_post( event_t *e ) {
     uint8_t status = 0;

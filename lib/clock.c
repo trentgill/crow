@@ -9,6 +9,16 @@
 #include "clock_ll.h" // linked list for clocks
 
 #include "caw.h" // Caw_printf
+#include "events.h" // event_queue_space
+
+// clock_update() resumes at most this many clocks per tick. the rest stay in
+// their list (in wake order) and resume on following ticks.
+#define CLOCK_RESUMES_PER_TICK 10
+
+// and never fills the event queue past this many free slots, leaving room for
+// other events (metro, input, asl, ii). the main loop only handles one event
+// per pass, so the cap alone can still overflow the queue if Lua is slow.
+#define CLOCK_EVENT_RESERVE    10
 
 ///////////////////////////////
 // private types
@@ -78,18 +88,28 @@ void clock_update(uint32_t time_now)
     // TODO can we use <= for time comparison or does it create double-trigs?
     // this should reduce latency by 1ms if it works.
     double dtime_now = (double)time_now;
+    int resume_count = CLOCK_RESUMES_PER_TICK;
 sleep_next:
-    if(sleep_head // list is not empty
+    if(resume_count > 0
+    && event_queue_space() > CLOCK_EVENT_RESERVE
+    && sleep_head // list is not empty
     && sleep_head->wakeup < dtime_now){ // time to awaken
-        L_queue_clock_resume(sleep_head->coro_id); // event!
+        // pop the node before queueing the resume, so the list is consistent
+        int id = sleep_head->coro_id;
         ll_insert_idle(ll_pop(&sleep_head)); // return to idle list
+        L_queue_clock_resume(id); // event!
+        resume_count--;
         goto sleep_next; // check the next sleeper too!
     }
 sync_next:
-    if(sync_head // list is not empty
+    if(resume_count > 0
+    && event_queue_space() > CLOCK_EVENT_RESERVE
+    && sync_head // list is not empty
     && sync_head->wakeup < precise_beat_now){ // time to awaken
-        L_queue_clock_resume(sync_head->coro_id); // event!
+        int id = sync_head->coro_id;
         ll_insert_idle(ll_pop(&sync_head)); // return to idle list
+        L_queue_clock_resume(id); // event!
+        resume_count--;
         goto sync_next; // check the next syncer too!
     }
 }
