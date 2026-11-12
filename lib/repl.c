@@ -8,6 +8,7 @@
 #include <stm32f7xx_hal.h> // HAL_Delay()
 #include "lib/flash.h"     // Flash_write_(), Flash_which_userscript(), Flash_read()
 #include "lib/caw.h"       // Caw_send_raw(), Caw_send_luachunk(), Caw_send_luaerror()
+#include "lib/crashreport.h" // crashreport_skip_userscript()
 
 // types
 typedef enum{ REPL_normal
@@ -35,7 +36,13 @@ void REPL_init( lua_State* lua )
     Lua = lua;
     running_from_mem = false;
 
-    switch( Flash_which_user_script() ){
+    USERSCRIPT_t script = Flash_which_user_script();
+    if( crashreport_skip_userscript() ){
+        // the last boots all crashed soon after starting. run without a
+        // script this once so the host can get in. flash is left as it is
+        script = USERSCRIPT_Clear;
+    }
+    switch( script ){
         case USERSCRIPT_Default:
             REPL_run_script( USERSCRIPT_Default, NULL, 0 );
             break;

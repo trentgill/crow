@@ -19,6 +19,7 @@
 #include "lib/flash.h" // Flash_clear_user_script()
 #include "stm32f7xx_it.h" // CPU_count;
 #include "lib/telemetry.h"
+#include "lib/crashreport.h" // crashreport_init(), crashreport_tick()
 
 
 int main(void)
@@ -35,6 +36,7 @@ int main(void)
     status_led_set(1); // set status to ON to show sign of life straight away
 
     printf("\n\nhi from crow!\n");
+    crashreport_init(); // before REPL_init() which checks crashreport_skip_userscript()
 
     // Drivers
     int max_timers = Timer_Init();
@@ -83,6 +85,7 @@ int main(void)
         if( last_tick != time_now ){ // called on 1ms interval
             last_tick = time_now;
             clock_update(time_now);
+            crashreport_tick(time_now);
             status_led_tick(time_now);
         }
         event_next(); // check/execute single event

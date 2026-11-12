@@ -149,6 +149,16 @@ SECTIONS
     _edata = .;        /* define a global symbol at data end */
   } >DTCM AT> FLASH
 
+  /* Not copied or zeroed by the startup code, so it survives a reset.
+     Holds the crash report (lib/crashreport.c). */
+  .noinit (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.noinit)
+    *(.noinit*)
+    . = ALIGN(4);
+  } >DTCM
+
   
   /* Uninitialized data section */
   . = ALIGN(4);

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "../submodules/lua/src/lauxlib.h"
+#include "crashreport.h"
 
 // linker symbols
 extern char _sdata;
@@ -129,23 +130,10 @@ static void setnum( lua_State* L, const char* k, float v )
     lua_setfield( L, -2, k );
 }
 
-__attribute__((noinline)) static int overflow_stack( volatile int n )
-{
-    volatile char pad[256];
-    pad[0] = 1;
-    if( pad[0] ){ n = overflow_stack( n + 1 ); } // never false, but the compiler can't know
-    return n + pad[0];
-}
-
 static void test_fault( int kind )
 {
-    switch( kind ){
-        case 0: *(volatile uint32_t*)0xE0100000 = 0; break; // bus fault: nothing lives here
-        case 1: __asm volatile( ".short 0xDE00" );   break; // undefined instruction
-        case 2: panic_request = 1;                   break; // lua panic, from the main loop
-        case 3: overflow_stack(0);                   break; // run the stack into the heap
-        default: break;
-    }
+    if( kind == 2 ){ panic_request = 1; } // lua panic, raised from the main loop
+    else { crashreport_test_fault( kind ); } // 0 bus fault, 1 undefined instruction, 3 stack overflow
 }
 
 // sys_telemetry()          -> table of measurements since the last reset
@@ -208,6 +196,10 @@ int Telemetry_lua( lua_State* L )
     setint( L, "ram_gap"     , (uint32_t)&_eheap - heap_top ); // the heap can still grow by this
     setint( L, "lua_bytes"   , lua_gc( L, LUA_GCCOUNT, 0 ) * 1024
                              + lua_gc( L, LUA_GCCOUNTB, 0 ) );
+        // last reset
+    setint( L, "crash_kind"  , crashreport_kind() );  // 0 unless this boot follows a crash
+    setint( L, "crash_pc"    , crashreport_pc() );
+    setint( L, "crash_count" , crashreport_count() ); // crash resets since power-on
         // serial & events
     setint( L, "rx_bytes"    , tm_counters[TM_rx_bytes] );
     setint( L, "tx_bytes"    , tm_counters[TM_tx_bytes] );

@@ -27,6 +27,7 @@
 #include "lib/events.h"     // event_t event_post()
 #include "stm32f7xx_hal.h"  // HAL_GetTick()
 #include "stm32f7xx_it.h"   // CPU_GetCount()
+#include "lib/crashreport.h" // crashreport_lua_panic()
 
 // Lua lib C implementations
 // as much low-level functionality is in here as possible
@@ -48,6 +49,7 @@ static void Lua_linkctolua( lua_State* L );
 static float Lua_check_memory( void );
 static int Lua_call_usercode( lua_State* L, int nargs, int nresults );
 static int Lua_handle_error( lua_State* L );
+static int Lua_panic( lua_State* L );
 static void timeouthook( lua_State* L, lua_Debug* ar );
 
 // Handler prototypes
@@ -79,10 +81,21 @@ lua_State* L; // global access for 'reset-environment'
 lua_State* Lua_Init(void)
 {
     L = luaL_newstate();
+    lua_atpanic(L, Lua_panic);
     luaL_openlibs(L);
     Lua_linkctolua(L);
     l_bootstrap_init(L); // redefine dofile(), print(), load crowlib
     return L;
+}
+
+// An error outside any pcall (eg. out of memory in an unprotected API call).
+// Lua would abort() when this returns, so record it and reset instead.
+static int Lua_panic( lua_State* L )
+{
+    // only use the error if it's already a string: converting it may allocate
+    crashreport_lua_panic( (lua_type(L, -1) == LUA_TSTRING) ? lua_tostring(L, -1)
+                                                            : NULL );
+    return 0; // not reached
 }
 
 lua_State* Lua_ReInit_Environment(lua_State* L){
