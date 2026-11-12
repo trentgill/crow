@@ -56,17 +56,17 @@
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
 
-/* Periodically, the state of the buffer "UserTxBuffer" is checked.
-   The period depends on CDC_POLLING_INTERVAL */
-#define CDC_POLLING_INTERVAL (float)2.0 /* in ms. The max is 65 and the min is 1 */
-
 extern USBD_CDC_ItfTypeDef  USBD_CDC_fops;
-extern int timer_index;
 
 void CDC_clear_buffers();
 
-void USB_tx_enqueue( uint8_t* buf, uint32_t len );
-size_t USB_tx_space( void );
+void USB_tx_enqueue( const uint8_t* lead, uint32_t lead_len
+                   , const uint8_t* buf,  uint32_t len
+                   , const uint8_t* tail, uint32_t tail_len );
+void USB_tx_stream( const uint8_t* buf, uint32_t len
+                  , const uint8_t* tail, uint32_t tail_len );
+void USB_tx_stream_wait( void );
+void USB_tx_kick( void );
 int USB_tx_is_ready( void );
 uint8_t USB_rx_dequeue_LOCK( uint8_t** buf, uint32_t* len );
 void USB_rx_dequeue_UNLOCK( void );

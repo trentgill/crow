@@ -7,7 +7,7 @@
 
 #include <stm32f7xx_hal.h> // HAL_Delay()
 #include "lib/flash.h"     // Flash_write_(), Flash_which_userscript(), Flash_read()
-#include "lib/caw.h"       // Caw_send_raw(), Caw_send_luachunk(), Caw_send_luaerror()
+#include "lib/caw.h"       // Caw_stream_raw(), Caw_send_luachunk(), Caw_send_luaerror()
 #include "lib/crashreport.h" // crashreport_skip_userscript()
 
 // types
@@ -83,6 +83,7 @@ void REPL_upload( int flash )
                            , new_script_len ) ){ // successful load
             if( flash ){
                 // TODO if we're setting init() should check it doesn't crash
+                Caw_stream_wait(); // a ^^p may still be reading the flash
                 if( Flash_write_user_script( new_script
                                            , new_script_len
                                            ) ){
@@ -110,6 +111,7 @@ void REPL_upload( int flash )
 void REPL_clear_script( void )
 {
     REPL_reset();
+    Caw_stream_wait(); // a ^^p may still be reading the flash
     Flash_clear_user_script();
     running_from_mem = false;
     REPL_run_script( USERSCRIPT_Clear, NULL, 0 );
@@ -121,6 +123,7 @@ void REPL_clear_script( void )
 void REPL_default_script( void )
 {
     REPL_reset();
+    Caw_stream_wait(); // a ^^p may still be reading the flash
     Flash_default_user_script();
     running_from_mem = false;
     REPL_run_script( USERSCRIPT_Default, NULL, 0 );
@@ -175,14 +178,7 @@ void REPL_print_script( void )
     if( !running_from_mem && Flash_which_user_script() == USERSCRIPT_User ){
         uint16_t length = Flash_read_user_scriptlen();
         char* addr = Flash_read_user_scriptaddr();
-        const int chunk = 0x200;
-        while( length > chunk ){
-            Caw_send_raw( (uint8_t*)addr, chunk );
-            length -= chunk;
-            addr += chunk;
-            HAL_Delay(3); // wait for usb tx
-        }
-        Caw_send_raw( (uint8_t*)addr, length );
+        Caw_stream_raw( (uint8_t*)addr, length ); // sent straight from flash
     } else {
         REPL_print_script_name();
     }

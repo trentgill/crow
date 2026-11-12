@@ -45,7 +45,7 @@ int main(void)
     events_init();
     Metro_Init( max_timers-2 ); // reserve 2 timers for USB & ADC
     clock_init( 100 ); // TODO how to pass it the timer?
-    Caw_Init( max_timers-1 ); // use last timer
+    Caw_Init();
     CDC_clear_buffers();
 
     i2c_hw_pullups_init(); // enable GPIO for v1.1 hardware pullups

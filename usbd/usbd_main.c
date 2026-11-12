@@ -3,12 +3,9 @@
 #include "../ll/debug_usart.h"
 
 USBD_HandleTypeDef USBD_Device;
-extern int timer_index;
 
-void USB_CDC_Init( int timer )
+void USB_CDC_Init( void )
 {
-    timer_index = timer;
-
     // Init Device Library
     if( USBD_Init(&USBD_Device, &VCP_Desc, 0) != USBD_OK ){
         printf("Invalid Device handle\n");
@@ -41,11 +38,4 @@ void OTG_HS_IRQHandler(void)
 #endif
 {
     HAL_PCD_IRQHandler(&hpcd);
-}
-
-extern TIM_HandleTypeDef USBTimHandle;
-
-void TIMu_IRQHandler(void)
-{
-    HAL_TIM_IRQHandler(&USBTimHandle);
 }

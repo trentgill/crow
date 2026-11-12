@@ -10,12 +10,11 @@
 #define USB_RX_BUFFER 2048
 static char reader[USB_RX_BUFFER];
 static int16_t pReader = 0;
-static const char* queued_ptr = NULL;
 
-void Caw_Init( int timer_index )
+void Caw_Init( void )
 {
     for( int i=0; i<USB_RX_BUFFER; i++ ){ reader[i] = 0; }
-    USB_CDC_Init( timer_index );
+    USB_CDC_Init();
 }
 
 void Caw_DeInit( void )
@@ -23,77 +22,68 @@ void Caw_DeInit( void )
     USB_CDC_DeInit();
 }
 
+// each of the send functions below queues one message: it reaches the host
+// whole, or (when it cannot be queued) not at all
 void Caw_send_raw( uint8_t* buf, uint32_t len )
 {
-    BLOCK_IRQS(
-        USB_tx_enqueue( buf, len );
-    );
+    USB_tx_enqueue( NULL, 0, buf, len, NULL, 0 );
     status_led_xor(); // blink status light
 }
+
+static const uint8_t newline[] = "\n\r";
 
 void Caw_printf( char* text, ... )
 {
     va_list aptr;
     va_start(aptr, text);
     size_t len = vsnprintf( NULL, 0, text, aptr ); // get length of string
+    va_end(aptr);
     char b[len+1]; // buffer to fit string plus NULL
+    va_start(aptr, text);
     vsnprintf( b, len+1, text, aptr ); // put string in b
     va_end(aptr);
 
-    const uint8_t newline[] = "\n\r";
-    BLOCK_IRQS(
-        USB_tx_enqueue( (uint8_t*)b, len );
-        USB_tx_enqueue( (uint8_t*)newline, 2 );
-    );
+    USB_tx_enqueue( NULL, 0, (uint8_t*)b, len, newline, 2 );
     status_led_xor(); // blink status light
 }
 
 // luachunk expects a \0 terminated string
 void Caw_send_luachunk( char* text )
 {
-    const uint8_t newline[] = "\n\r";
-    BLOCK_IRQS(
-        USB_tx_enqueue( (uint8_t*)text, strlen(text) );
-        USB_tx_enqueue( (uint8_t*)newline, 2 );
-    );
+    USB_tx_enqueue( NULL, 0, (uint8_t*)text, strlen(text), newline, 2 );
     status_led_xor(); // blink status light
 }
 
+// stream must stay valid until sent (it is not copied). followed by newline
 void Caw_stream_constchar( const char* stream )
 {
-    size_t len = strlen(stream);
-    size_t space = USB_tx_space();
-    if( len < (space-2) ){ // leave space for newline
-        Caw_send_luachunk( (char*)stream ); // send it normally
-    } else {
-        // break up the stream into chunks
-        Caw_send_raw( (uint8_t*)stream, space ); // fill the buffer
-
-        // here's the remainder that didn't fit
-        queued_ptr = stream + space;
-    }
+    USB_tx_stream( (const uint8_t*)stream, strlen(stream), newline, 2 );
     status_led_xor(); // blink status light
 }
 
+// buf must stay valid until sent (it is not copied). sent as is
+void Caw_stream_raw( const uint8_t* buf, uint32_t len )
+{
+    USB_tx_stream( buf, len, NULL, 0 );
+    status_led_xor(); // blink status light
+}
+
+// wait for a stream to finish (eg. before rewriting the flash it reads)
+void Caw_stream_wait( void )
+{
+    USB_tx_stream_wait();
+}
+
+// called from the main loop: start any output queued from interrupts
 void Caw_send_queued( void )
 {
-    if( queued_ptr != NULL
-     && USB_tx_is_ready() ){
-        const char* p = queued_ptr; // copy
-        queued_ptr = NULL; // clear before calling
-        Caw_stream_constchar( p ); // may reinstate queued_ptr
-    }
+    USB_tx_kick();
 }
 
 void Caw_send_luaerror( char* error_msg )
 {
     const uint8_t leader[] = "\\";
-    const uint8_t newline[] = "\n\r";
-    BLOCK_IRQS(
-        USB_tx_enqueue( (uint8_t*)leader, 1 );
-        USB_tx_enqueue( (uint8_t*)error_msg, strlen(error_msg) );
-        USB_tx_enqueue( (uint8_t*)newline, 2 );
-    );
+    USB_tx_enqueue( leader, 1, (uint8_t*)error_msg, strlen(error_msg), newline, 2 );
     status_led_xor(); // blink status light
 }
 
