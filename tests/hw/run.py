@@ -65,7 +65,7 @@ def t_build(c, R):
 
 
 def t_boot(c, R):
-    dt = c.reset(settle=True)
+    dt = statistics.median(c.reset(settle=True) for _ in range(3))
     R.metric("boot_to_usb", dt * 1000, "ms", "lower")
     v = c.command("^^v")
     R.data["version"] = v[0] if v else "?"

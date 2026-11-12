@@ -1,0 +1,399 @@
+{
+ "label": "a456",
+ "date": "2026-11-12 14:51:00",
+ "metrics": {
+  "flash_image": {
+   "value": 302256,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "boot_to_usb": {
+   "value": 466.60077600972727,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "ram_static": {
+   "value": 30136,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "lua_heap_at_boot": {
+   "value": 80403,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "heap_claimed": {
+   "value": 106496,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "stack_peak": {
+   "value": 2776,
+   "unit": "bytes",
+   "better": null
+  },
+  "ram_free_for_scripts": {
+   "value": 93432,
+   "unit": "bytes",
+   "better": "higher"
+  },
+  "idle_cpu_busy": {
+   "value": 7.779676,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_dsp_block_avg": {
+   "value": 33.77887,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_block_max": {
+   "value": 36.73611,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_load": {
+   "value": 4.948667,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_loop_worst": {
+   "value": 145.7917,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_cpu_busy": {
+   "value": 23.753140000000002,
+   "unit": "%",
+   "better": "lower"
+  },
+  "busy_dsp_block_avg": {
+   "value": 119.0489,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_dsp_block_max": {
+   "value": 155.5417,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_loop_worst": {
+   "value": 611.1204,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_event_queue_peak": {
+   "value": 3,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "busy_lua_loop": {
+   "value": 227.488,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_loop": {
+   "value": 196.005,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_call": {
+   "value": 255.662,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_table": {
+   "value": 57.434,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_string": {
+   "value": 75.889,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_math": {
+   "value": 211.406,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_library": {
+   "value": 549.529,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_median": {
+   "value": 1.9997670024167746,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_p95": {
+   "value": 2.021838998189196,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "print_20_lines_delivered": {
+   "value": 75.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_300_lines_delivered": {
+   "value": 44.666666666666664,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_throughput": {
+   "value": 399.012468404474,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_druid_paced_time": {
+   "value": 801.1974419932812,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_druid_paced_rate": {
+   "value": 19.717986069322073,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_lines_unpaced_time": {
+   "value": 55.91234000166878,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_lines_unpaced_rate": {
+   "value": 282.54943362285474,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_small_burst_time": {
+   "value": 13.98034201702103,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_small_burst_rate": {
+   "value": 211.94045155637502,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "print_script_time": {
+   "value": 140.48496499890462,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_lines_per_second": {
+   "value": 5771.497968245074,
+   "unit": "lines/s",
+   "better": "higher"
+  },
+  "loopback_worst_error": {
+   "value": 50.16299999999951,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "ramp_biggest_step": {
+   "value": 65.29008999999999,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "clock_burst_event_queue_peak": {
+   "value": 10,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "watchdog_empty_loop": {
+   "value": 388.11662199441344,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_c_call_loop": {
+   "value": 1002.1339759987313,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_print_loop": {
+   "value": 1001.7082450212911,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_pcall_loop": {
+   "value": 387.75976200122386,
+   "unit": "ms",
+   "better": null
+  },
+  "lua_allocatable": {
+   "value": 85,
+   "unit": "kB",
+   "better": "higher"
+  }
+ },
+ "checks": {
+  "version_reply": {
+   "ok": true,
+   "detail": "[\"^^version('v4.0.5-18-g4c68c0d')\"]"
+  },
+  "identity_reply": {
+   "ok": true,
+   "detail": ""
+  },
+  "core_voltage_scale_in_spec": {
+   "ok": true,
+   "detail": "216 MHz at VOS=3"
+  },
+  "bus_clocks_in_spec": {
+   "ok": false,
+   "detail": "APB1 108 MHz, APB2 216 MHz"
+  },
+  "busy_no_events_lost": {
+   "ok": true,
+   "detail": "0 dropped"
+  },
+  "busy_no_tx_dropped": {
+   "ok": true,
+   "detail": "0 bytes"
+  },
+  "latency_all_answered": {
+   "ok": true,
+   "detail": "200 of 200"
+  },
+  "print_20_lines_whole": {
+   "ok": false,
+   "detail": "15 intact of 20, 276 bytes dropped by the device"
+  },
+  "print_300_lines_whole": {
+   "ok": false,
+   "detail": "134 intact of 300, 9764 bytes dropped by the device"
+  },
+  "upload_druid_paced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_lines_unpaced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_burst_intact": {
+   "ok": false,
+   "detail": "ValueError"
+  },
+  "upload_small_burst_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "store_script": {
+   "ok": true,
+   "detail": "1396 ms"
+  },
+  "stored_script_runs_at_boot": {
+   "ok": true,
+   "detail": ""
+  },
+  "print_script_matches": {
+   "ok": true,
+   "detail": "15798 of 15798 bytes"
+  },
+  "clear_script": {
+   "ok": true,
+   "detail": "['^^pub(\"_clear\")']"
+  },
+  "repl_300_writes_all_run": {
+   "ok": true,
+   "detail": "300 of 300"
+  },
+  "repl_100_lines_one_write_all_run": {
+   "ok": true,
+   "detail": "100 of 100"
+  },
+  "repl_multiline_write_is_one_chunk": {
+   "ok": false,
+   "detail": "nil"
+  },
+  "loopback_within_150mV": {
+   "ok": true,
+   "detail": "50 mV"
+  },
+  "ramp_is_smooth": {
+   "ok": true,
+   "detail": "173 samples, 65 mV"
+  },
+  "clock_50_wake_together": {
+   "ok": true,
+   "detail": "each ran 10 to 10 times, 0 events dropped"
+  },
+  "watchdog_empty_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_c_call_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_print_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_pcall_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_clock_coroutine_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_kill_not_swallowed_by_pcall": {
+   "ok": true,
+   "detail": "_w=nil"
+  },
+  "out_of_memory_survived": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_bus_fault_recovers": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_bus_fault_reported": {
+   "ok": true,
+   "detail": "!crash: BusFault pc=0x08036e7e lr=0x0803df93 psr=0x810f0000 sp=0x20006388 cfsr=0x00008200 "
+  },
+  "fault_undefined_instruction_recovers": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_undefined_instruction_reported": {
+   "ok": true,
+   "detail": "!crash: UsageFault pc=0x08036e90 lr=0x0803df93 psr=0x610f0000 sp=0x20006388 cfsr=0x0001000"
+  },
+  "fault_lua_panic_recovers": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_lua_panic_reported": {
+   "ok": true,
+   "detail": "!crash: lua panic: telemetry test panic"
+  },
+  "fault_stack_overflow_recovers": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_stack_overflow_reported": {
+   "ok": true,
+   "detail": "!crash: BusFault pc=0x00000000 lr=0x00000000 psr=0x00000000 sp=0x1ffffe90 cfsr=0x00000400 "
+  },
+  "crash_loop_ends_with_working_repl": {
+   "ok": true,
+   "detail": ""
+  },
+  "crash_loop_script_skipped_and_said_so": {
+   "ok": true,
+   "detail": "!crash: user script skipped after repeated crashes"
+  },
+  "crash_loop_script_still_stored": {
+   "ok": true,
+   "detail": ""
+  }
+ },
+ "flashed": "/tmp/claude-1000/-home-trent-d-gazette--claude-worktrees-bridge-cse-01NBXuVPxCk7EF5eZAhuPaZu/859f2986-4ace-5eb4-b417-34e1d65249d8/scratchpad/crow-a456.bin",
+ "version": "^^version('v4.0.5-18-g4c68c0d')"
+}

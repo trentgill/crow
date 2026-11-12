@@ -1,0 +1,380 @@
+{
+ "label": "baseline",
+ "date": "2026-11-12 14:11:32",
+ "metrics": {
+  "flash_image": {
+   "value": 300552,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "static_data": {
+   "value": 43848,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "static_bss": {
+   "value": 91792,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "boot_to_usb": {
+   "value": 471.77220101002604,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "ram_static": {
+   "value": 69584,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "lua_heap_at_boot": {
+   "value": 95764,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "heap_claimed": {
+   "value": 122928,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "stack_peak": {
+   "value": 2624,
+   "unit": "bytes",
+   "better": null
+  },
+  "ram_free_for_scripts": {
+   "value": 68776,
+   "unit": "bytes",
+   "better": "higher"
+  },
+  "idle_cpu_busy": {
+   "value": 13.139439999999999,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_dsp_block_avg": {
+   "value": 66.83135,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_block_max": {
+   "value": 69.39352,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_load": {
+   "value": 9.791856000000001,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_loop_worst": {
+   "value": 218.1667,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_cpu_busy": {
+   "value": 35.32116,
+   "unit": "%",
+   "better": "lower"
+  },
+  "busy_dsp_block_avg": {
+   "value": 188.9206,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_dsp_block_max": {
+   "value": 233.2963,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_loop_worst": {
+   "value": 1348.352,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_event_queue_peak": {
+   "value": 3,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "busy_lua_loop": {
+   "value": 576.253,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_loop": {
+   "value": 446.647,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_call": {
+   "value": 576.607,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_table": {
+   "value": 137.948,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_string": {
+   "value": 123.752,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_math": {
+   "value": 370.958,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_library": {
+   "value": 1053.726,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_median": {
+   "value": 1.9997430208604783,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_p95": {
+   "value": 2.0349639817140996,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "print_20_lines_delivered": {
+   "value": 100.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_300_lines_delivered": {
+   "value": 71.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_throughput": {
+   "value": 408.6797415590953,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_druid_paced_time": {
+   "value": 816.7409769957885,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_druid_paced_rate": {
+   "value": 19.342729757615015,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_lines_unpaced_time": {
+   "value": 81.8944479979109,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_lines_unpaced_rate": {
+   "value": 192.90685005170317,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_small_burst_time": {
+   "value": 22.045582998543978,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_small_burst_rate": {
+   "value": 134.40334057827795,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "print_script_time": {
+   "value": 140.39956399938092,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_lines_per_second": {
+   "value": 4050.98526760116,
+   "unit": "lines/s",
+   "better": "higher"
+  },
+  "loopback_worst_error": {
+   "value": 48.9929999999994,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "ramp_biggest_step": {
+   "value": 65.75799,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "clock_burst_event_queue_peak": {
+   "value": 39,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "watchdog_empty_loop": {
+   "value": 920.5185690079816,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_c_call_loop": {
+   "value": 2694.58904498606,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_print_loop": {
+   "value": 5522.232414019527,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_pcall_loop": {
+   "value": 921.6493039857596,
+   "unit": "ms",
+   "better": null
+  },
+  "lua_allocatable": {
+   "value": 61,
+   "unit": "kB",
+   "better": "higher"
+  }
+ },
+ "checks": {
+  "version_reply": {
+   "ok": true,
+   "detail": "[\"^^version('v4.0.5-6-g2ff7e59')\"]"
+  },
+  "identity_reply": {
+   "ok": true,
+   "detail": ""
+  },
+  "core_voltage_scale_in_spec": {
+   "ok": false,
+   "detail": "216 MHz at VOS=2"
+  },
+  "bus_clocks_in_spec": {
+   "ok": false,
+   "detail": "APB1 108 MHz, APB2 216 MHz"
+  },
+  "busy_no_events_lost": {
+   "ok": true,
+   "detail": "0 dropped"
+  },
+  "busy_no_tx_dropped": {
+   "ok": true,
+   "detail": "0 bytes"
+  },
+  "latency_all_answered": {
+   "ok": true,
+   "detail": "200 of 200"
+  },
+  "print_20_lines_whole": {
+   "ok": true,
+   "detail": "20 intact of 20, 0 bytes dropped by the device"
+  },
+  "print_300_lines_whole": {
+   "ok": false,
+   "detail": "213 intact of 300, 4515 bytes dropped by the device"
+  },
+  "upload_druid_paced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_lines_unpaced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_burst_intact": {
+   "ok": false,
+   "detail": "ValueError"
+  },
+  "upload_small_burst_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "store_script": {
+   "ok": true,
+   "detail": "1459 ms"
+  },
+  "stored_script_runs_at_boot": {
+   "ok": false,
+   "detail": ""
+  },
+  "print_script_matches": {
+   "ok": true,
+   "detail": "15798 of 15798 bytes"
+  },
+  "clear_script": {
+   "ok": true,
+   "detail": "['^^pub(\"_clear\")']"
+  },
+  "repl_300_writes_all_run": {
+   "ok": true,
+   "detail": "300 of 300"
+  },
+  "repl_100_lines_one_write_all_run": {
+   "ok": true,
+   "detail": "100 of 100"
+  },
+  "repl_multiline_write_is_one_chunk": {
+   "ok": false,
+   "detail": "nil"
+  },
+  "loopback_within_150mV": {
+   "ok": true,
+   "detail": "49 mV"
+  },
+  "ramp_is_smooth": {
+   "ok": true,
+   "detail": "173 samples, 66 mV"
+  },
+  "clock_50_wake_together": {
+   "ok": false,
+   "detail": "each ran 0 to 11 times, 11 events dropped"
+  },
+  "watchdog_empty_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_c_call_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_print_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_pcall_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_clock_coroutine_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_kill_not_swallowed_by_pcall": {
+   "ok": true,
+   "detail": "_w=nil"
+  },
+  "out_of_memory_survived": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_bus_fault_recovers": {
+   "ok": false,
+   "detail": "no crash report"
+  },
+  "fault_undefined_instruction_recovers": {
+   "ok": false,
+   "detail": "no crash report"
+  },
+  "fault_lua_panic_recovers": {
+   "ok": false,
+   "detail": "no crash report"
+  },
+  "fault_stack_overflow_recovers": {
+   "ok": false,
+   "detail": "no crash report"
+  }
+ },
+ "version": "^^version('v4.0.5-6-g2ff7e59')"
+}
