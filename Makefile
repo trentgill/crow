@@ -57,6 +57,11 @@ CFLAGS += -fno-common
 CFLAGS += -DVERSION=\"$(GIT_VERSION)\"
 CFLAGS += -ffunction-sections -fdata-sections # provides majority of LTO binary size reduction
 CFLAGS += -DLUA_COMPAT_MATHLIB
+# crow's own lua libraries are bytecode in flash (.rodata). run them from there
+# rather than copying their instructions into the lua heap. the range tells the
+# loader which chunks really are in flash: anything else is copied as usual.
+CFLAGS += -DBYTECODE_IN_FLASH
+CFLAGS += -DBYTECODE_FLASH_START=0x08000000 -DBYTECODE_FLASH_END=0x08080000
 
 # debugger: choose between uart (=0) & swtrace(=1). latter requires hardware mod
 TRACE ?= 0
@@ -297,13 +302,15 @@ zip: $(BIN) $(TARGET).dfu
 # could be avoided by a more complicated pass in (sed), but this was easier
 # 1. cross-compile all .lua files into .lc bytecode for stm32-arm-cortex-m7 format
 # 2. wrap the .lc binary files into .h headers with auto-generated names
-# 3. add const qualifiers to headers to satisfy C99 struct initializer requirement
+# 3. add const qualifiers to headers: the length for C99 struct initializers, and
+#    the bytecode itself so it is linked into flash instead of being copied to ram
 
 %.lua.h: %.lua $(BUILD_DIR)
 	@echo l2h $< "->" $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua.h,.h,$@)))
 	@$(LUAC_CROSS) -s -o $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua,.lc,$<))) $<
 	@xxd -i $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua,.lc,$<))) $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua.h,.h,$@)))
 	@sed -i 's/unsigned int/const unsigned int/g' $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua.h,.h,$@)))
+	@sed -i 's/^unsigned char/const unsigned char/g' $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua.h,.h,$@)))
 
 Startup.o: $(STARTUP)
 	@$(CC) $(CFLAGS) -c $< -o $@
