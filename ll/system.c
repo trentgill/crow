@@ -45,7 +45,8 @@ static void Sys_Clk_Config(void)
 {
     __HAL_RCC_PWR_CLK_ENABLE();
 
-    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
+    // 216MHz needs scale 1 plus over-drive. scale 2 is only rated to 180MHz
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
     static RCC_OscInitTypeDef osc;
     osc.OscillatorType = RCC_OSCILLATORTYPE_HSE;
