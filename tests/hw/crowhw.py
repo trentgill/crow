@@ -23,6 +23,43 @@ def find_port():
     return ports[0] if ports else None
 
 
+STLINK_PRODUCTS = ("3744", "3748", "374b", "374e", "374f", "3752", "3753", "3754")
+
+
+def attached_stlinks():
+    """Serial numbers of the ST-Links on this machine, read from sysfs so that
+    no probe (and no target behind one) is touched."""
+    found = []
+    for dev in glob.glob("/sys/bus/usb/devices/*"):
+        try:
+            if open(dev + "/idVendor").read().strip() != "0483":
+                continue
+            if open(dev + "/idProduct").read().strip() not in STLINK_PRODUCTS:
+                continue
+            found.append(open(dev + "/serial").read().strip())
+        except OSError:
+            pass
+    return found
+
+
+def find_stlink():
+    """Serial number of the ST-Link wired to crow.
+
+    Never let st-flash choose: with a second probe on the machine it takes
+    whichever it finds first and will happily erase the wrong board. Set
+    CROW_STLINK to the serial of crow's probe. Left unset, the only attached
+    ST-Link is used, and with more than one the suite refuses to guess.
+    """
+    serial = os.environ.get("CROW_STLINK")
+    if serial:
+        return serial
+    probes = attached_stlinks()
+    if len(probes) != 1:
+        raise RuntimeError("%d ST-Links attached (%s): set CROW_STLINK to the serial of the "
+                           "one wired to crow" % (len(probes), ", ".join(probes) or "none"))
+    return probes[0]
+
+
 def modemmanager_active():
     r = subprocess.run(["systemctl", "is-active", "ModemManager"],
                        capture_output=True, text=True)
@@ -41,6 +78,7 @@ class Crow:
         self.ser = None
         self.events = []  # ^^event(...) lines seen while waiting for something else
         self.boot_lines = []  # what crow said while starting, after the last reset
+        self._stlink = None
         self._n = 0
         # ModemManager probes a new tty for a few seconds and types 'test' into it,
         # unless a udev rule tells it not to (see README.md)
@@ -96,10 +134,18 @@ class Crow:
 
     # ---- st-link
 
+    def stflash(self, *args, timeout=30):
+        if self._stlink is None:
+            self._stlink = find_stlink()
+        return subprocess.run(["st-flash", "--serial", self._stlink, *args],
+                              capture_output=True, text=True, timeout=timeout)
+
     def reset(self, settle=True):
         """Hardware reset. Returns seconds until the USB port reappeared."""
         self.close()
-        subprocess.run(["st-flash", "reset"], capture_output=True, check=True, timeout=30)
+        r = self.stflash("reset")
+        if r.returncode:
+            raise RuntimeError("st-flash reset failed:\n" + r.stderr[-400:])
         _, dt = self.wait_port(gone_first=True)
         self.open(settle=settle)
         self._boot_text()
@@ -113,8 +159,7 @@ class Crow:
 
     def flash(self, binfile):
         self.close()
-        r = subprocess.run(["st-flash", "--reset", "write", binfile, APP_ADDRESS],
-                           capture_output=True, text=True, timeout=120)
+        r = self.stflash("--reset", "write", binfile, APP_ADDRESS, timeout=120)
         if "jolly good" not in r.stderr + r.stdout:
             raise RuntimeError("st-flash failed:\n" + r.stderr[-800:])
         self.wait_port(gone_first=True)

@@ -14,7 +14,11 @@ python3 tests/hw/report.py baseline mychange          # markdown comparison
 
 - crow on USB (serial), found by its `/dev/serial/by-id` name
 - an ST-Link on crow's SWD header (`st-flash`), used to flash, to reset between
-  sections, and to recover a module the tests have crashed on purpose
+  sections, and to recover a module the tests have crashed on purpose. Every
+  call names that probe by serial number: set `CROW_STLINK=<serial>`. If it is
+  unset and exactly one ST-Link is attached, that one is used; with several the
+  suite stops rather than guess (st-flash would take the first it finds and
+  could erase another board)
 - output 1 patched to input 1, output 2 to input 2
 - python3 with pyserial, and the arm toolchain for the size figures
 

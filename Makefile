@@ -246,8 +246,12 @@ $(BIN): $(EXECUTABLE)
 	@echo "        ^ must be less than 384kB (384,000)"
 	# 512kb -64kb(bootloader) -128kb(scripts)
 
+# with more than one st-link attached, name crow's: make flash CROW_STLINK=<serial>
+# (st-flash otherwise takes the first probe it finds, whatever it is wired to)
+STLINK = $(if $(CROW_STLINK),--serial $(CROW_STLINK))
+
 flash: $(BIN)
-	st-flash write $(BIN) 0x08020000
+	st-flash $(STLINK) write $(BIN) 0x08020000
 
 debug:
 	make flash TRACE=1
@@ -325,7 +329,7 @@ fsk-wav: $(BIN)
 		$(PRJ_DIR)/$(BIN)
 
 erase:
-	st-flash erase
+	st-flash $(STLINK) erase
 
 norns:
 	lua util/ii_norns_actions.lua lua/ii/ $(NORNS_DIR)/lua/core/crow/ii_actions.lua
