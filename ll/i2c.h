@@ -94,6 +94,14 @@ typedef struct{
 extern I2C_Stats_t i2c_stats;
 void I2C_ResetStats( void );
 
+// a snapshot of the peripheral and driver state, for debugging a stuck bus
+typedef struct{
+    uint32_t isr, cr1, cr2;
+    uint8_t  hal_state, hal_mode, op, scl, sda;
+    uint32_t hal_error;
+} I2C_Diag_t;
+void I2C_GetDiag( I2C_Diag_t* d );
+
 
 ///////////////////////////////////////
 // fnptr typedefs for low-level

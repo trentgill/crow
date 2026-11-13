@@ -57,6 +57,21 @@ static void busy_end( void ){
     }
 }
 
+void I2C_GetDiag( I2C_Diag_t* d )
+{
+    BLOCK_IRQS(
+        d->isr       = I2Cx->ISR;
+        d->cr1       = I2Cx->CR1;
+        d->cr2       = I2Cx->CR2;
+        d->hal_state = i2c_handle.State;
+        d->hal_mode  = i2c_handle.Mode;
+        d->hal_error = i2c_handle.ErrorCode;
+        d->op        = buf.operation;
+    );
+    d->scl = !!(I2Cx_SCL_GPIO_PORT->IDR & I2Cx_SCL_PIN);
+    d->sda = !!(I2Cx_SDA_GPIO_PORT->IDR & I2Cx_SDA_PIN);
+}
+
 void I2C_ResetStats( void )
 {
     BLOCK_IRQS( memset( &i2c_stats, 0, sizeof(i2c_stats) ); );

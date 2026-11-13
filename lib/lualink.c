@@ -584,6 +584,12 @@ static int _ii_stats( lua_State *L )
     STAT(q_full) STAT(retry) STAT(abandon) STAT(fq_full)
     STAT(busy_max_us)
 #undef STAT
+    I2C_Diag_t d;
+    I2C_GetDiag( &d );
+#define DIAG(f) lua_pushinteger(L, d.f); lua_setfield(L, -2, #f);
+    DIAG(isr) DIAG(cr1) DIAG(cr2) DIAG(hal_state) DIAG(hal_mode) DIAG(hal_error)
+    DIAG(op) DIAG(scl) DIAG(sda)
+#undef DIAG
     return 1;
 }
 
