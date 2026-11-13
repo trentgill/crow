@@ -79,3 +79,51 @@ function report()
     for k, v in pairs(R) do out[#out+1] = 'R.' .. k .. '=' .. tostring(v) end
     print('REPORT ' .. table.concat(out, ' '))
 end
+
+-- W/ (Tape, ii address 0x71) as the follower. 'wq' queries speed and checks
+-- every answer against the expected value; 'wset' sets speed to a changing
+-- value then queries it, checking each answer against what was set (in order).
+W = {}
+ii.wtape.event = function(e, v)
+    if e.name ~= 'speed' then return end
+    local want = W.fifo and table.remove(W.fifo, 1) or W.want
+    -- W/ applies a new speed on its next audio block (1.33 ms), so a query
+    -- straight after a set may still see the one before it
+    local prev = W.prev
+    if W.fifo then W.prev = want end
+    if want and math.abs(v - want) < 0.002 then W.ok = W.ok + 1
+    elseif prev and math.abs(v - prev) < 0.002 then W.ok = W.ok + 1; W.late = (W.late or 0) + 1
+    else W.bad = W.bad + 1; W.last_bad = v end
+end
+function runw(n, period, per, kind, want)
+    W = {sent=0, qsent=0, ok=0, bad=0, seq=0, want=want, fifo=(kind == 'wset') and {} or nil}
+    if MW then metro.free(MW.id) end
+    MW = metro.init{ time = period, count = n, event = function(c)
+        for i = 1, per do
+            local s = W.seq
+            W.seq = s + 1
+            if kind == 'wset' then
+                local v = 0.5 + (s % 8) * 0.125
+                ii.wtape.speed(v)
+                W.sent = W.sent + 1
+                table.insert(W.fifo, v)
+            end
+            if kind == 'wbad' and s % 2 == 0 then
+                -- getters W/ answers with 0 bytes: null, loop_next, skip, unknown
+                local bad = {128, 142, 144, 200}
+                ii.raw(0x71, string.char(bad[(s // 2) % 4 + 1]), 2)
+                W.sent = W.sent + 1
+            end
+            ii.wtape.get('speed')
+            W.qsent = W.qsent + 1
+        end
+    end }
+    MW:start()
+end
+function reportw()
+    local s = ii.stats()
+    local out = {}
+    for k, v in pairs(s) do out[#out+1] = k .. '=' .. v end
+    for k, v in pairs(W) do if type(v) ~= 'table' then out[#out+1] = 'W.' .. k .. '=' .. tostring(v) end end
+    print('REPORT ' .. table.concat(out, ' '))
+end
