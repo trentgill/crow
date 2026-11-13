@@ -130,3 +130,91 @@ function reportw()
     for k, v in pairs(W) do if type(v) ~= 'table' then out[#out+1] = 'W.' .. k .. '=' .. tostring(v) end end
     print('REPORT ' .. table.concat(out, ' '))
 end
+
+-- Just Friends (ii address 0x70) as the follower. 'jq' alternates the speed
+-- switch getter (1 byte) and run (2 bytes) and checks every answer; 'jset'
+-- sets run to a changing value then queries it, checking each answer against
+-- what was set (in order); 'jnote'/'jvox' send note setters (5 and 6 bytes)
+-- with a run query between; 'jlong' sends run setters padded to 9 bytes;
+-- 'jbad' asks for getters JF has no answer for between good queries.
+-- Values are raw s16V: on JF's original driver the high byte of a 2-byte
+-- answer is replayed as a setter command, so the default set keeps it out of
+-- JF's command range (1..14, 22). 'all' covers every high byte.
+J = {}
+-- crow truncates volts * 1638.3, so send from the middle of the step
+local function jv(raw) return raw / 1638.3 end
+local function jsend(raw) return (raw + 0.5) / 1638.3 end
+local JRAW = {0x1800, 0x1b11, 0x1e22, 0x2133, 0x2444, 0x2755, 0x2a66, 0x2d77}
+local JALL = {}
+for i = 0, 63 do JALL[#JALL+1] = (i * 0x101 + 0x33) % 0x4000 end
+ii.jf.event = function(e, v)
+    if e.name == J.g1 then
+        if v == J.g1want then J.ok = J.ok + 1 else J.bad = J.bad + 1; J.last_bad = e.name .. tostring(v) end
+        return
+    elseif e.name ~= J.g2 then
+        J.other = J.other + 1
+        return
+    end
+    local want = J.fifo and table.remove(J.fifo, 1) or J.want
+    -- JF applies a setter on its next audio block (0.67 ms), so a query
+    -- straight after a set may still see the one before it
+    local prev = J.prev
+    if J.fifo then J.prev = want end
+    if want and math.abs(v - want) < 0.0003 then J.ok = J.ok + 1
+    elseif prev and math.abs(v - prev) < 0.0003 then J.ok = J.ok + 1; J.late = J.late + 1
+    else J.bad = J.bad + 1; J.last_bad = v end
+end
+-- crow A works on the speed switch and run; crow B on the mode switch and
+-- transpose, so two leaders never send the same bytes (identical transfers
+-- from two leaders merge into one on the wire, which hides arbitration)
+function runj(n, period, per, kind, g1want, raw0, vals, who)
+    local V = (vals == 'all') and JALL or JRAW
+    local g1, g2, set2, off = 'speed', 'run', ii.jf.run, 0
+    if who == 'B' then g1, g2, set2, off = 'tsc', 'transpose', ii.jf.transpose, 1 end
+    J = {sent=0, qsent=0, nsent=0, ok=0, bad=0, late=0, other=0, seq=0, g1=g1, g2=g2, g1want=g1want,
+         want=jv(raw0), fifo=(kind == 'jset' or kind == 'jlong') and {} or nil}
+    if J.fifo then J.prev = J.want; J.want = nil end
+    -- swallow the answers to the bad getters before Lua looks them up
+    ii.event_raw = function(addr, cmd) return addr == 0x70 and cmd ~= 143 and cmd ~= 131 and cmd ~= 144 and cmd ~= 132 end
+    if MJ then metro.free(MJ.id) end
+    MJ = metro.init{ time = period, count = n, event = function(c)
+        for i = 1, per do
+            local s = J.seq
+            J.seq = s + 1
+            if kind == 'jset' or kind == 'jlong' then
+                local raw = V[(s + off * 3) % #V + 1]
+                if kind == 'jset' then
+                    set2(jsend(raw))
+                else
+                    ii.raw(0x70, string.char(who == 'B' and 4 or 3, raw >> 8, raw & 0xff, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa), 0)
+                end
+                J.sent = J.sent + 1
+                table.insert(J.fifo, jv(raw))
+                ii.jf.get(g2)
+                J.qsent = J.qsent + 1
+            elseif kind == 'jnote' or kind == 'jvox' then
+                if kind == 'jnote' then ii.jf.play_note((s % 24 + off * 25) / 12, 0.5)
+                else ii.jf.play_voice((s + off * 3) % 6 + 1, (s % 24) / 12, 0.5) end
+                J.nsent = J.nsent + 1
+                if s % 4 == 0 then ii.jf.get(g2); J.qsent = J.qsent + 1 end
+            else -- 'jq', 'jbad'
+                if kind == 'jbad' and s % 2 == 0 then
+                    -- null getter, getters JF has commented out, past the end
+                    local bad = {128, 133, 136, 137, 141, 150, 151, 200}
+                    ii.raw(0x70, string.char(bad[(s // 2) % #bad + 1]), (s // 2) % 2 + 1)
+                    J.sent = J.sent + 1
+                end
+                if s % 2 == 0 then ii.jf.get(g1) else ii.jf.get(g2) end
+                J.qsent = J.qsent + 1
+            end
+        end
+    end }
+    MJ:start()
+end
+function reportj()
+    local s = ii.stats()
+    local out = {}
+    for k, v in pairs(s) do out[#out+1] = k .. '=' .. v end
+    for k, v in pairs(J) do if type(v) ~= 'table' then out[#out+1] = 'J.' .. k .. '=' .. tostring(v) end end
+    print('REPORT ' .. table.concat(out, ' '))
+end
