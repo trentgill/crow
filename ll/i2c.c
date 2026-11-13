@@ -28,6 +28,7 @@ typedef struct{
     uint8_t  size;
     uint8_t  command; // store the request
     uint8_t  data[I2C_MAX_CMD_BYTES];
+    uint8_t  tx[I2C_MAX_CMD_BYTES]; // what we send as leader: the caller's buffer can change mid-send
 } I2C_State_t;
 
 
@@ -257,28 +258,84 @@ void I2C_SetAddress( uint8_t address )
 ////////////////////////////
 // leader set/get
 
-#define I2C_READY_TIMEOUT 20000
-int timeout = I2C_READY_TIMEOUT;
+// No single step of a transfer (leading, following, or waiting on the main loop
+// for a query answer) should take this long. Past it the driver is stuck: the
+// usual cause is the other end of a transfer going away part-way through.
+#define I2C_STUCK_MS 100
+
+static void delay_us( uint32_t us )
+{
+    uint32_t start = DWT->CYCCNT;
+    uint32_t n = us * (SystemCoreClock / 1000000);
+    while( DWT->CYCCNT - start < n ){;}
+}
+
+// Free a bus that a follower is holding. A device that lost track part-way
+// through a byte keeps driving SDA low: clock SCL until it lets go (at most 9
+// bits), then send STOP so every device returns to idle.
+static void bus_clear( void )
+{
+    GPIO_InitTypeDef gpio;
+    gpio.Pin   = I2Cx_SCL_PIN | I2Cx_SDA_PIN;
+    gpio.Mode  = GPIO_MODE_OUTPUT_OD;
+    gpio.Pull  = (pullup_state) ? GPIO_PULLUP : GPIO_NOPULL;
+    gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_WritePin( I2Cx_SCL_GPIO_PORT, I2Cx_SCL_PIN | I2Cx_SDA_PIN, GPIO_PIN_SET );
+    HAL_GPIO_Init( I2Cx_SCL_GPIO_PORT, &gpio );
+    delay_us( 10 );
+
+    for( int i=0; i<9 && !HAL_GPIO_ReadPin( I2Cx_SDA_GPIO_PORT, I2Cx_SDA_PIN ); i++ ){
+        HAL_GPIO_WritePin( I2Cx_SCL_GPIO_PORT, I2Cx_SCL_PIN, GPIO_PIN_RESET );
+        delay_us( 5 );
+        HAL_GPIO_WritePin( I2Cx_SCL_GPIO_PORT, I2Cx_SCL_PIN, GPIO_PIN_SET );
+        for( int w=0; w<100 && !HAL_GPIO_ReadPin( I2Cx_SCL_GPIO_PORT, I2Cx_SCL_PIN ); w++ ){
+            delay_us( 10 ); // a follower may stretch the clock
+        }
+        delay_us( 5 );
+        i2c_stats.bus_clocks++;
+    }
+    // STOP: SDA rises while SCL is high
+    HAL_GPIO_WritePin( I2Cx_SDA_GPIO_PORT, I2Cx_SDA_PIN, GPIO_PIN_RESET );
+    delay_us( 5 );
+    HAL_GPIO_WritePin( I2Cx_SDA_GPIO_PORT, I2Cx_SDA_PIN, GPIO_PIN_SET );
+    delay_us( 5 );
+
+    if( !HAL_GPIO_ReadPin( I2Cx_SCL_GPIO_PORT, I2Cx_SCL_PIN ) ){ i2c_stats.scl_held++; }
+    if( !HAL_GPIO_ReadPin( I2Cx_SDA_GPIO_PORT, I2Cx_SDA_PIN ) ){ i2c_stats.sda_held++; }
+    HAL_GPIO_DeInit( I2Cx_SCL_GPIO_PORT, I2Cx_SCL_PIN | I2Cx_SDA_PIN );
+}
+
+// Reset the peripheral, free the bus, and start listening again. Whatever
+// transfer was in flight is lost.
+static void I2C_Recover( void )
+{
+    i2c_stats.recover++;
+    HAL_NVIC_DisableIRQ( I2Cx_ER_IRQn ); // I2C_Init enables them again
+    HAL_NVIC_DisableIRQ( I2Cx_EV_IRQn );
+    uint8_t address = I2C_GetAddress();
+    HAL_I2C_DeInit( &i2c_handle ); // resets I2C1 and releases the pins
+    bus_clear();
+    I2C_Init( address, lead_response, follow_action, follow_request, error_action );
+}
 
 int I2C_is_ready( void )
 {
-    switch( buf.operation ){
-        case OP_LISTEN:
-            timeout = I2C_READY_TIMEOUT;
-            break;
+    static uint32_t since = 0;    // tick when the driver entered its current operation
+    static I2C_OP_t since_op = OP_LISTEN;
 
-        case OP_ABORT:
-        case OP_NULL:
-            // waiting
-            break;
-
-        default: // all others
-            if( --timeout <= 0 ){
-                buf.operation = OP_ABORT;
-                i2c_stats.ready_timeout++;
-                HAL_I2C_Master_Abort_IT( &i2c_handle, buf.address );
-            }
-            break;
+    I2C_OP_t op = buf.operation;
+    if( op == OP_LISTEN ){
+        since_op = op;
+        return 1;
+    }
+    uint32_t now = HAL_GetTick();
+    if( op != since_op ){ // progress: restart the clock
+        since_op = op;
+        since = now;
+    } else if( now - since > I2C_STUCK_MS ){
+        i2c_stats.ready_timeout++;
+        I2C_Recover();
+        since_op = buf.operation;
     }
     return (buf.operation == OP_LISTEN);
 }
@@ -290,13 +347,18 @@ int I2C_LeadTx( uint8_t  address
 {
     address <<= 1;
     int error = 0;
+    if( size > I2C_MAX_CMD_BYTES ){ size = I2C_MAX_CMD_BYTES; }
     if( buf.operation == OP_LISTEN ){
         buf.address = address; // save in case of abort
+        memcpy( buf.tx, data, size );
         BLOCK_IRQS(
-            if( HAL_I2C_DisableListen_IT( &i2c_handle ) != HAL_OK ){ error |= 1; }
-            if( HAL_I2C_Master_Transmit_IT( &i2c_handle
+            if( HAL_I2C_DisableListen_IT( &i2c_handle ) != HAL_OK ){
+                // a follower transfer began since the check above: leave it be
+                error |= 1;
+                i2c_stats.start_state++;
+            } else if( HAL_I2C_Master_Transmit_IT( &i2c_handle
                     , address
-                    , data
+                    , buf.tx
                     , size
                     ) != HAL_OK ){
                 error |= 2; // means i2c bus was busy
@@ -320,13 +382,15 @@ int I2C_LeadRx( uint8_t  address
 {
     address <<= 1;
     int error = 0;
+    if( size > I2C_MAX_CMD_BYTES ){ size = I2C_MAX_CMD_BYTES; }
     if( buf.operation == OP_LISTEN ){
         buf.address = address;
-        buf.size    = rx_size;
         buf.command = data[0];
+        memcpy( buf.tx, data, size );
         BLOCK_IRQS(
             if( HAL_I2C_DisableListen_IT( &i2c_handle ) != HAL_OK ){
                 error |= 0x1;
+                i2c_stats.start_state++;
             } else if( __HAL_I2C_GET_FLAG( &i2c_handle, I2C_FLAG_BUSY ) ){
                 // NB: Explicitly check BUSY flag as Sequential_Transmit doesn't
                 error |= 0x2;
@@ -334,14 +398,19 @@ int I2C_LeadRx( uint8_t  address
                 HAL_I2C_ListenCpltCallback( &i2c_handle ); // re-enable listen
             } else if( HAL_I2C_Master_Sequential_Transmit_IT( &i2c_handle
                             , address
-                            , data
+                            , buf.tx
                             , size
                             , I2C_FIRST_FRAME
                             ) != HAL_OK ){
                 error |= 0x4;
                 i2c_stats.start_busy++;
                 HAL_I2C_ListenCpltCallback( &i2c_handle ); // re-enable listen
-            } else { buf.operation = OP_LEAD_RX; i2c_stats.lead_rx++; busy_start(); }
+            } else {
+                buf.size = rx_size; // after DisableListen: a follower transfer also uses it
+                buf.operation = OP_LEAD_RX;
+                i2c_stats.lead_rx++;
+                busy_start();
+            }
         );
     } else {
         printf("can't leadRx because operation=%i\n",buf.operation);
@@ -567,7 +636,6 @@ void HAL_I2C_ErrorCallback( I2C_HandleTypeDef* h )
 
 void HAL_I2C_AbortCpltCallback( I2C_HandleTypeDef* h )
 {
-    timeout = I2C_READY_TIMEOUT;
     i2c_stats.abort_done++;
     HAL_I2C_ListenCpltCallback( &i2c_handle );
 }

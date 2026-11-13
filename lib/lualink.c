@@ -578,6 +578,7 @@ static int _ii_stats( lua_State *L )
 #define STAT(f) lua_pushinteger(L, s.f); lua_setfield(L, -2, #f);
     STAT(lead_tx) STAT(lead_rx) STAT(lead_tx_done) STAT(lead_rx_done)
     STAT(start_busy) STAT(start_state) STAT(ready_timeout) STAT(abort_done)
+    STAT(recover) STAT(bus_clocks) STAT(scl_held) STAT(sda_held)
     STAT(follow_addr_rx) STAT(follow_addr_tx) STAT(follow_rx_done) STAT(follow_tx_done)
     STAT(follow_defer) STAT(follow_stale)
     STAT(err_af) STAT(err_arlo) STAT(err_berr) STAT(err_ovr) STAT(err_other)

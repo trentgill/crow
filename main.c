@@ -89,8 +89,8 @@ int main(void)
             status_led_tick(time_now);
         }
         event_next(); // check/execute single event
+        ii_follow_process(); // first: a leader may be waiting on our answer
         ii_leader_process();
-        ii_follow_process();
         Caw_send_queued();
     }
 }

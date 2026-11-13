@@ -67,7 +67,11 @@ typedef struct{
     uint32_t lead_rx_done;   // query answer received
     uint32_t start_busy;     // could not start: bus busy
     uint32_t start_state;    // could not start: driver not listening
-    uint32_t ready_timeout;  // transfer took too long and was aborted
+    uint32_t ready_timeout;  // driver stuck for I2C_STUCK_MS: reset and recovered
+    uint32_t recover;        // peripheral resets
+    uint32_t bus_clocks;     // SCL pulses sent to free a held SDA
+    uint32_t scl_held;       // SCL still low after recovery (another device holds it)
+    uint32_t sda_held;       // SDA still low after recovery
     uint32_t abort_done;
     // following
     uint32_t follow_addr_rx; // our address matched, leader writing
