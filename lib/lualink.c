@@ -603,13 +603,14 @@ static int _ii_stats( lua_State *L )
 #define STAT(f) lua_pushinteger(L, s.f); lua_setfield(L, -2, #f);
     STAT(lead_tx) STAT(lead_rx) STAT(lead_tx_done) STAT(lead_rx_done)
     STAT(start_busy) STAT(start_state) STAT(ready_timeout) STAT(abort_done)
+    STAT(start_stuck) STAT(lost) STAT(lead_yield) STAT(berr_ignored)
     STAT(recover) STAT(bus_clocks) STAT(scl_held) STAT(sda_held)
     STAT(stuck_op) STAT(stuck_isr) STAT(stuck_cr1) STAT(stuck_cr2) STAT(stuck_hal) STAT(stuck_lines)
     STAT(follow_addr_rx) STAT(follow_addr_tx) STAT(follow_rx_done) STAT(follow_tx_done)
-    STAT(follow_defer) STAT(follow_stale) STAT(follow_start_fail)
+    STAT(follow_defer) STAT(follow_stale) STAT(follow_start_fail) STAT(follow_pad)
     STAT(err_af) STAT(err_arlo) STAT(err_berr) STAT(err_ovr) STAT(err_other)
     STAT(ev_arlo) STAT(listen_fail)
-    STAT(q_full) STAT(retry) STAT(abandon) STAT(fq_full)
+    STAT(q_full) STAT(retry) STAT(abandon) STAT(fq_full) STAT(nack_drop) STAT(abandon_tries) STAT(abandon_err)
     STAT(busy_max_us)
 #undef STAT
     I2C_Diag_t d;

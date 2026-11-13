@@ -128,7 +128,7 @@ def passed(r):
             return False
         out = L.get("T.sent", 0) + L.get("T.qsent", 0)
         arrived = F.get("R.n", 0) + L.get("T.qok", 0)
-        dropped = L.get("q_full", 0) + L.get("abandon", 0)
+        dropped = L.get("q_full", 0) + L.get("abandon", 0) + L.get("nack_drop", 0)
         if arrived + dropped != out:
             return False
     return not (r["A"].get("recover", 0) or r["B"].get("recover", 0))

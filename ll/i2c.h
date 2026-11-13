@@ -75,6 +75,10 @@ typedef struct{
     // driver state just before the last reset
     uint32_t stuck_op, stuck_isr, stuck_cr1, stuck_cr2, stuck_hal, stuck_lines;
     uint32_t abort_done;
+    uint32_t start_stuck;    // our START never went out (two leaders started together)
+    uint32_t lost;           // transfers to send again: arbitration lost or start stuck
+    uint32_t lead_yield;     // addressed by another leader while ours was pending: became follower
+    uint32_t berr_ignored;   // spurious bus error in master mode (errata 2.13.4)
     // following
     uint32_t follow_addr_rx; // our address matched, leader writing
     uint32_t follow_addr_tx; // our address matched, leader reading
@@ -83,6 +87,7 @@ typedef struct{
     uint32_t follow_defer;   // answer deferred to the main loop (SCL held)
     uint32_t follow_stale;   // deferred answer ready after the leader gave up
     uint32_t follow_start_fail; // HAL refused to start a follower transfer
+    uint32_t follow_pad;     // padding bytes queued after our answer
     // errors (HAL ErrorCode bits, each counted)
     uint32_t err_af;
     uint32_t err_arlo;
@@ -96,6 +101,9 @@ typedef struct{
     uint32_t retry;
     uint32_t abandon;        // dropped after a failed retry
     uint32_t fq_full;        // follower queue full, message dropped
+    uint32_t nack_drop;      // dropped: no follower answered to the address
+    uint32_t abandon_tries;  // attempts made on the last dropped message
+    uint32_t abandon_err;    // error from its last attempt
     // timing
     uint32_t busy_max_us;    // longest time away from listening
 } I2C_Stats_t;
@@ -114,6 +122,7 @@ void I2C_GetDiag( I2C_Diag_t* d );
 // event trace (TELEMETRY builds): entry ix, oldest first. 0 past the end
 int I2C_GetTrace( int ix, uint32_t* t, uint32_t* packed );
 void I2C_TraceRestart( void );
+void I2C_TraceEvent( uint8_t ev, uint8_t arg ); // for ii.c: 19 abandon
 
 
 ///////////////////////////////////////
@@ -155,6 +164,14 @@ int I2C_FollowRespond( uint8_t* data, int size );
 
 /////////////////////////
 // lead the bus
+
+// outcome of the last transfer we led, read (and cleared) by I2C_LeadResult()
+#define I2C_LEAD_NONE 0
+#define I2C_LEAD_DONE 1 // finished, or failed for good (no ACK)
+#define I2C_LEAD_LOST 2 // another leader got the bus first, or our START never went out: try again
+#define I2C_LEAD_NACK 3 // nobody answered to the address: absent, or busy resetting itself
+int I2C_LeadResult( void );
+
 int I2C_is_ready( void );
 int I2C_LeadTx( uint8_t  address
               , uint8_t* data

@@ -13,6 +13,7 @@
 #include "wrQueue.h"
 #include "wrMath.h" // lim_f
 #include "caw.h" // Caw_send_luachunk
+#include "../ll/random.h" // Random_Int: retry backoff
 
 // for follow getters
 #include "io.h"
@@ -172,56 +173,96 @@ uint8_t ii_leader_enqueue_bytes( uint8_t  address
     return 0;
 }
 
-// a message that cannot start (bus busy, or a follower transfer under way) is
-// tried again on each pass of the main loop for this long before it is dropped
-#define II_RETRY_MS 50
+// A message stays at the front of the queue until its transfer is over. One
+// that cannot start (bus busy, or a follower transfer under way), or that lost
+// the bus to another leader, is tried again after a short random wait, so two
+// leaders do not keep colliding in step. After this long it is dropped.
+#define II_RETRY_MS     50
+// A follower that does not answer its address is usually absent, so a NACK
+// only earns retries for this long: it may also be a follower part-way
+// through resetting its own i2c after a collision.
+#define II_NACK_RETRY_MS 5
+#define II_BACKOFF_MIN  50  // us
+#define II_BACKOFF_MAX  800 // us
 
 void ii_leader_process( void )
 {
-    static uint32_t first_fail = 0; // tick of the first failed start, 0 = none
+    static bool     failing    = false; // the front message has failed at least once
+    static uint32_t first_fail = 0;  // tick of its first failure
+    static bool     in_flight  = false; // the front message has been started
+    static uint32_t wait_from  = 0;  // DWT cycles: backoff start
+    static uint32_t wait_for   = 0;  // backoff length in cycles, 0 = none
+    static uint32_t tries      = 0;  // attempts on the front message
+    int error = 0;
 
     error_report();
+
     if( !I2C_is_ready() ){ return; } // I2C lib is busy
+
+    if( in_flight ){
+        in_flight = false;
+        int r = I2C_LeadResult();
+        if( r == I2C_LEAD_NACK ){
+            if( !failing ){ failing = true; first_fail = HAL_GetTick(); }
+            if( HAL_GetTick() - first_fail >= II_NACK_RETRY_MS ){
+                i2c_stats.nack_drop++;
+                r = I2C_LEAD_DONE; // give up quietly, as before
+            }
+        }
+        if( r == I2C_LEAD_LOST || r == I2C_LEAD_NACK ){
+            goto retry; // same message again
+        }
+        failing = false;
+        tries = 0;
+        queue_dequeue(l_qix); // done (or failed for good): next message
+    }
+
+    if( wait_for ){
+        if( DWT->CYCCNT - wait_from < wait_for ){ return; }
+        wait_for = 0;
+    }
 
     int ix = queue_front(l_qix);
     if( ix < 0 ){ return; } // queue is empty!
     ii_q_t* q = &l_iq[ix];
 
-    int error = 0;
+    tries++;
     if( q->query_length ){
         rx_arg = q->arg;
         rx_is_raw = q->is_raw;
-        if( (error = I2C_LeadRx( q->address
-                      , q->data
-                      , q->length
-                      , q->query_length
-                      )) ){
-            goto retry; // attempt retry, or abandon
-        }
+        error = I2C_LeadRx( q->address
+                          , q->data
+                          , q->length
+                          , q->query_length
+                          );
     } else {
-        if( (error = I2C_LeadTx( q->address
-                      , q->data
-                      , q->length
-                      )) ){
-            goto retry; // attempt retry, or abandon
-        }
+        error = I2C_LeadTx( q->address
+                          , q->data
+                          , q->length
+                          );
     }
-    first_fail = 0;
-    queue_dequeue(l_qix); // pop the value from queue as it was successfully used
-    return;
+    if( !error ){
+        in_flight = true; // dequeued once I2C_LeadResult() says it is done
+        return;
+    }
 
 retry:
-    if( !first_fail ){ first_fail = HAL_GetTick() | 1; }
+    if( !failing ){ failing = true; first_fail = HAL_GetTick(); }
     if( HAL_GetTick() - first_fail < II_RETRY_MS ){
         i2c_stats.retry++;
+        wait_from = DWT->CYCCNT;
+        wait_for  = Random_Int( II_BACKOFF_MIN, II_BACKOFF_MAX ) * (SystemCoreClock / 1000000);
         return; // DON'T POP QUEUE. we'll try it next time
     }
-    first_fail = 0;
+    failing = false;
     i2c_stats.abandon++;
+    i2c_stats.abandon_tries = tries;
+    i2c_stats.abandon_err = error;
+    tries = 0;
+    I2C_TraceEvent( 19, error );
     printf("ii: dropped a message after %ims (error %i)\n", II_RETRY_MS, error);
     if( error & 0x6 ){ error_action( 1 ); } // the bus stayed busy
     queue_dequeue(l_qix); // pop the value, abandoning this message
-    return;
 }
 
 

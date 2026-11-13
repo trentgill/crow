@@ -47,6 +47,25 @@ static uint8_t pullup_state = 1;
 
 static uint32_t i2c_timings = I2C_TIMING_STABLE; // default timings
 
+static volatile uint8_t leading = 0; // a transfer we lead is under way
+static volatile uint8_t lead_result = I2C_LEAD_NONE;
+
+static void lead_end( uint8_t result )
+{
+    if( leading ){
+        leading = 0;
+        lead_result = result;
+        if( result == I2C_LEAD_LOST ){ i2c_stats.lost++; }
+    }
+}
+
+int I2C_LeadResult( void )
+{
+    int r;
+    BLOCK_IRQS( r = lead_result; lead_result = I2C_LEAD_NONE; );
+    return r;
+}
+
 I2C_Stats_t i2c_stats;
 static uint32_t busy_since = 0; // DWT cycles when we last left OP_LISTEN, 0 = listening
 
@@ -93,7 +112,9 @@ int I2C_GetTrace( int ix, uint32_t* t, uint32_t* packed )
     return 1;
 }
 void I2C_TraceRestart( void ){ trace_n = 0; trace_frozen = 0; }
+void I2C_TraceEvent( uint8_t ev, uint8_t arg ){ TRACE( ev, arg ); }
 #else
+void I2C_TraceEvent( uint8_t ev, uint8_t arg ){}
 #define TRACE(ev, arg)
 int I2C_GetTrace( int ix, uint32_t* t, uint32_t* packed ){ return 0; }
 void I2C_TraceRestart( void ){}
@@ -302,6 +323,11 @@ void I2C_SetAddress( uint8_t address )
 // for a query answer) should take this long. Past it the driver is stuck: the
 // usual cause is the other end of a transfer going away part-way through.
 #define I2C_STUCK_MS 100
+// When two leaders set START within a few microseconds of each other, both
+// peripherals can end up waiting for a bus-free that never comes, each with a
+// START pending and both lines low (no arbitration-lost flag is raised). A
+// START that has not gone out after this long is that case.
+#define I2C_START_STUCK_MS 3
 
 static void delay_us( uint32_t us )
 {
@@ -350,6 +376,7 @@ static void bus_clear( void )
 static void I2C_Recover( void )
 {
     TRACE( 17, 0 );
+    lead_end( I2C_LEAD_LOST ); // a transfer we led is cut short: send it again
 #ifdef TELEMETRY
     trace_frozen = 1;
 #endif
@@ -384,12 +411,27 @@ int I2C_is_ready( void )
     if( op != since_op ){ // progress: restart the clock
         since_op = op;
         since = now;
+    } else if( leading
+            && (I2Cx->CR2 & I2C_CR2_START)
+            && now - since > I2C_START_STUCK_MS ){
+        i2c_stats.start_stuck++;
+        I2C_Recover();
+        since_op = buf.operation;
     } else if( now - since > I2C_STUCK_MS ){
         i2c_stats.ready_timeout++;
         I2C_Recover();
         since_op = buf.operation;
     }
     return (buf.operation == OP_LISTEN);
+}
+
+// errata ES0360/ES0334 2.13.6: if our own START was requested before another
+// leader addressed us, the peripheral starts that transfer by itself at the
+// next STOP, unless CR2 is written with START low after ADDR is cleared and
+// before the STOP. Call after every slave transfer start (they clear ADDR).
+static void cr2_drop_start( void )
+{
+    I2Cx->CR2 = I2Cx->CR2 & ~I2C_CR2_START;
 }
 
 // true when the peripheral has bus events the driver has not handled yet: an
@@ -414,6 +456,7 @@ int I2C_LeadTx( uint8_t  address
             if( bus_unsettled() ){
                 error |= 2; // means i2c bus was busy
                 i2c_stats.start_busy++;
+                TRACE( 16, (uint8_t)(I2Cx->ISR >> 8) );
             } else if( HAL_I2C_DisableListen_IT( &i2c_handle ) != HAL_OK ){
                 // a follower transfer began since the check above: leave it be
                 error |= 1;
@@ -426,7 +469,13 @@ int I2C_LeadTx( uint8_t  address
                 error |= 2; // means i2c bus was busy
                 i2c_stats.start_busy++;
                 HAL_I2C_ListenCpltCallback( &i2c_handle ); // re-enable listen
-            } else { buf.operation = OP_LEAD_TX; i2c_stats.lead_tx++; busy_start(); }
+            } else {
+                __HAL_I2C_ENABLE_IT( &i2c_handle, I2C_IT_ADDRI ); // see the EV handler
+                buf.operation = OP_LEAD_TX;
+                leading = 1;
+                i2c_stats.lead_tx++;
+                busy_start();
+            }
             TRACE( 14, error );
         );
     } else {
@@ -454,6 +503,7 @@ int I2C_LeadRx( uint8_t  address
             if( bus_unsettled() ){
                 error |= 0x2;
                 i2c_stats.start_busy++;
+                TRACE( 16, (uint8_t)(I2Cx->ISR >> 8) );
             } else if( HAL_I2C_DisableListen_IT( &i2c_handle ) != HAL_OK ){
                 error |= 0x1;
                 i2c_stats.start_state++;
@@ -473,7 +523,9 @@ int I2C_LeadRx( uint8_t  address
                 HAL_I2C_ListenCpltCallback( &i2c_handle ); // re-enable listen
             } else {
                 buf.size = rx_size; // after DisableListen: a follower transfer also uses it
+                __HAL_I2C_ENABLE_IT( &i2c_handle, I2C_IT_ADDRI ); // see the EV handler
                 buf.operation = OP_LEAD_RX;
+                leading = 1;
                 i2c_stats.lead_rx++;
                 busy_start();
             }
@@ -501,6 +553,26 @@ void I2Cx_EV_IRQHandler( void )
     // Overload the HAL EV callback to handle early STOPF flag for variable length
     // i2c messagess. And (TODO) handle the arbitration-lost flag directly.
 
+    if( leading && __HAL_I2C_GET_FLAG( &i2c_handle, I2C_FLAG_ADDR ) ){
+        // Another leader is addressing us while our own START waits for the
+        // bus (or has just lost to it). Without this, ADDR went unserviced
+        // (listen is off while leading): we held SCL, the other leader waited
+        // on us, our START waited on the bus, and both stuck. Drop our transfer
+        // (it is sent again, see I2C_LeadResult), put the HAL back to listening
+        // and let its slave handler below take the address match.
+        i2c_stats.lead_yield++;
+        TRACE( 20, 0 );
+        lead_end( I2C_LEAD_LOST );
+        __HAL_I2C_CLEAR_FLAG( &i2c_handle, I2C_FLAG_ARLO ); // handled here, not as an error
+        __HAL_I2C_DISABLE_IT( &i2c_handle, I2C_IT_TXI | I2C_IT_RXI | I2C_IT_TCI
+                                         | I2C_IT_STOPI | I2C_IT_NACKI | I2C_IT_ERRI );
+        i2c_handle.State     = HAL_I2C_STATE_READY;
+        i2c_handle.Mode      = HAL_I2C_MODE_NONE;
+        i2c_handle.XferISR   = NULL;
+        i2c_handle.ErrorCode = HAL_I2C_ERROR_NONE;
+        __HAL_UNLOCK( &i2c_handle );
+        HAL_I2C_ListenCpltCallback( &i2c_handle ); // listen, and OP_LISTEN
+    }
     if( __HAL_I2C_GET_FLAG( &i2c_handle, I2C_FLAG_STOPF ) ){
         if( buf.operation == OP_FOLLOW_RX ){ // End of variable length reception
         // HACK to make the EV Handler treat STOPF as a non-error rx
@@ -509,6 +581,16 @@ void I2Cx_EV_IRQHandler( void )
             i2c_handle.XferOptions = I2C_NO_OPTION_FRAME;
             i2c_handle.State = HAL_I2C_STATE_BUSY_RX;
         }
+    }
+    if( buf.operation == OP_FOLLOW_TX
+     && i2c_handle.XferCount == 0
+     && __HAL_I2C_GET_FLAG( &i2c_handle, I2C_FLAG_TXIS ) ){
+        // Our answer is all queued and the leader has not NACKed yet. The HAL
+        // leaves TXIS (and its interrupt) set, so this handler re-ran every
+        // microsecond until the NACK. Give it a padding byte instead: it is
+        // flushed when the NACK comes, or sent if a leader reads too far.
+        I2Cx->TXDR = 0;
+        i2c_stats.follow_pad++;
     }
     if( __HAL_I2C_GET_FLAG( &i2c_handle, I2C_FLAG_ARLO ) ){
         // happens when multiple modules returning different data to TT
@@ -543,10 +625,15 @@ void HAL_I2C_MasterTxCpltCallback( I2C_HandleTypeDef* h )
                     , buf.data
                     , buf.size
                     , I2C_LAST_FRAME
-                    ) != HAL_OK ){ printf("LeadRx failed\n"); }
+                    ) != HAL_OK ){
+                i2c_stats.err_other++;
+                lead_end( I2C_LEAD_DONE );
+                HAL_I2C_ListenCpltCallback( &i2c_handle );
+            }
         );
     } else { // buf.operation == OP_LEAD_TX
         i2c_stats.lead_tx_done++;
+        lead_end( I2C_LEAD_DONE );
         HAL_I2C_ListenCpltCallback( &i2c_handle );
     }
 }
@@ -556,6 +643,7 @@ void HAL_I2C_MasterRxCpltCallback( I2C_HandleTypeDef* h )
 {
     TRACE( 12, 0 );
     i2c_stats.lead_rx_done++;
+    lead_end( I2C_LEAD_DONE );
     (*lead_response)( buf.address>>1
                     , buf.command
                     , buf.data
@@ -600,6 +688,7 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
                 , buf.size
                 , I2C_LAST_FRAME
                 );
+        cr2_drop_start();
         if( error ){ i2c_stats.follow_start_fail++; }
         else{ buf.operation = OP_FOLLOW_TX; }
     } else {
@@ -610,6 +699,7 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
                     , I2C_MAX_CMD_BYTES
                     , I2C_NEXT_FRAME
                     );
+            cr2_drop_start();
         );
         if( error ){ i2c_stats.follow_start_fail++; }
         else { buf.operation = OP_FOLLOW_RX; }
@@ -634,6 +724,7 @@ int I2C_FollowRespond( uint8_t* data, int size )
                 buf.operation = OP_FOLLOW_TX;
                 error = 0;
             }
+            cr2_drop_start();
         }
     );
     if( error ){ i2c_stats.follow_stale++; }
@@ -678,7 +769,15 @@ void HAL_I2C_ListenCpltCallback( I2C_HandleTypeDef* hi2c )
 void I2Cx_ER_IRQHandler( void )
 {
     TRACE( 2, 0 );
-    buf.operation = OP_ERROR;
+    if( leading
+     && (I2Cx->ISR & (I2C_ISR_BERR | I2C_ISR_ARLO | I2C_ISR_OVR)) == I2C_ISR_BERR ){
+        // errata ES0360/ES0334 2.13.4: a bus error can be flagged spuriously in
+        // master mode and the transfer carries on. Clear it and carry on too.
+        __HAL_I2C_CLEAR_FLAG( &i2c_handle, I2C_FLAG_BERR );
+        i2c_stats.berr_ignored++;
+        return;
+    }
+    if( leading ){ buf.operation = OP_ERROR; }
     HAL_I2C_ER_IRQHandler( &i2c_handle );
 }
 
@@ -705,14 +804,15 @@ void HAL_I2C_ErrorCallback( I2C_HandleTypeDef* h )
     //     case HAL_I2C_ERROR_AF:   printf("AF\n"); break;
     //     default: printf("unknown!\n"); break;
     // }
-    if( h->ErrorCode == HAL_I2C_ERROR_AF ){
+    // losing arbitration is ordinary with several leaders: the message is sent
+    // again (see I2C_LeadResult) and nobody needs to hear about it
+    lead_end( (e & HAL_I2C_ERROR_ARLO) ? I2C_LEAD_LOST
+            : (e == HAL_I2C_ERROR_AF)  ? I2C_LEAD_NACK
+            :                            I2C_LEAD_DONE );
+    if( e == HAL_I2C_ERROR_AF ){
         (*error_action)( 0 );
-    } else {
-        if( h->ErrorCode == 2 ){
-            (*error_action)( 1 );
-        } else{
-            (*error_action)( (int)h->ErrorCode );
-        }
+    } else if( e & ~HAL_I2C_ERROR_ARLO ){
+        (*error_action)( (int)e );
     }
     HAL_I2C_ListenCpltCallback( &i2c_handle ); // Re-enable Listen
 }
@@ -721,5 +821,6 @@ void HAL_I2C_AbortCpltCallback( I2C_HandleTypeDef* h )
 {
     TRACE( 18, 0 );
     i2c_stats.abort_done++;
+    lead_end( I2C_LEAD_DONE );
     HAL_I2C_ListenCpltCallback( &i2c_handle );
 }
