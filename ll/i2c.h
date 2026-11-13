@@ -80,6 +80,7 @@ typedef struct{
     uint32_t follow_tx_done;
     uint32_t follow_defer;   // answer deferred to the main loop (SCL held)
     uint32_t follow_stale;   // deferred answer ready after the leader gave up
+    uint32_t follow_start_fail; // HAL refused to start a follower transfer
     // errors (HAL ErrorCode bits, each counted)
     uint32_t err_af;
     uint32_t err_arlo;

@@ -45,6 +45,7 @@ static void lead_callback( uint8_t address, uint8_t command, uint8_t* rx_data );
 static int follow_request( uint8_t* pdata, int fresh );
 static int follow_action( uint8_t* pdata );
 static void error_action( int error_code );
+static void error_report( void );
 
 static uint8_t type_size( ii_Type_t t );
 static float decode( uint8_t* data, ii_Type_t type );
@@ -179,6 +180,7 @@ void ii_leader_process( void )
 {
     static uint32_t first_fail = 0; // tick of the first failed start, 0 = none
 
+    error_report();
     if( !I2C_is_ready() ){ return; } // I2C lib is busy
 
     int ix = queue_front(l_qix);
@@ -363,7 +365,6 @@ static int follow_action( uint8_t* pdata )
     int ix = queue_enqueue( f_qix );
     if( ix < 0 ){
         i2c_stats.fq_full++;
-        printf("ii_follow queue overflow\n");
         return 1;
     } else {
         memcpy( f_iq[ix], pdata, II_MAX_RECEIVE_LEN );
@@ -384,6 +385,22 @@ void ii_process_dequeue_decode( void )
                              );
 }
 
+// called from the i2c interrupt: the messages are sent later, from the main loop
+static volatile uint8_t error_pending = 0; // bit 0: bus busy, pullups off. bit 1: unknown
+static volatile int     error_last = 0;
+
+static void error_report( void )
+{
+    if( !error_pending ){ return; }
+    uint8_t e;
+    BLOCK_IRQS( e = error_pending; error_pending = 0; );
+    if( e & 1 ){ Caw_send_luachunk("ii: lines are low. try ii.pullup(true)"); }
+    if( e & 2 ){
+        Caw_send_luachunk("ii: unknown error.");
+        printf("I2C_ERROR %i\n", error_last);
+    }
+}
+
 static void error_action( int error_code )
 {
     switch( error_code ){
@@ -398,12 +415,12 @@ static void error_action( int error_code )
                 // Caw_send_luachunk("  check ii devices are connected correctly.");
                 // Caw_send_luachunk("  check no ii devices are frozen.");
             } else {
-                Caw_send_luachunk("ii: lines are low. try ii.pullup(true)");
+                error_pending |= 1;
             }
             break;
         default: // Unknown (ARLO?)
-            Caw_send_luachunk("ii: unknown error.");
-            printf("I2C_ERROR %i\n", error_code);
+            error_last = error_code;
+            error_pending |= 2;
             break;
     }
 }
@@ -473,7 +490,7 @@ static float decode( uint8_t* data, ii_Type_t type )
             // combine
             val += ((float)*(int16_t*)&u16)*II_TT_iVOLT;
             break;
-        default: printf("ii_decode unmatched\n"); break;
+        default: break; // unknown type decodes as 0
     }
     return val;
 }
@@ -536,8 +553,7 @@ static uint8_t encode( uint8_t* dest, ii_Type_t type, float data )
             d[len++] = (uint8_t)(u16>>8);          // High byte first
             d[len++] = (uint8_t)(u16 & 0x00FF);    // Low byte
             break;}
-        default: printf("no retval found\n"); return 0;
-            // FIXME: should this really print directly? or pass to caller?
+        default: return 0; // no return type: nothing to send (may run in the i2c interrupt)
     }
     return len;
 }

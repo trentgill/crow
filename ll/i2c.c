@@ -427,6 +427,9 @@ int I2C_LeadRx( uint8_t  address
 #define I2C_NO_OPTION_FRAME     (0xFFFF0000U)
 void I2Cx_EV_IRQHandler( void )
 {
+    // NB: nothing in this file's interrupt paths may printf or send over USB:
+    // both share state (the heap, the USB stack) with the main loop.
+
     // Overload the HAL EV callback to handle early STOPF flag for variable length
     // i2c messagess. And (TODO) handle the arbitration-lost flag directly.
 
@@ -437,7 +440,7 @@ void I2Cx_EV_IRQHandler( void )
             i2c_handle.XferCount = 0; // pretend we're done
             i2c_handle.XferOptions = I2C_NO_OPTION_FRAME;
             i2c_handle.State = HAL_I2C_STATE_BUSY_RX;
-        } else if( buf.operation == OP_FOLLOW_TX ){ printf("tx STOPF\n"); }
+        }
     }
     if( __HAL_I2C_GET_FLAG( &i2c_handle, I2C_FLAG_ARLO ) ){
         // happens when multiple modules returning different data to TT
@@ -445,7 +448,6 @@ void I2Cx_EV_IRQHandler( void )
         // just need to check that rxing & txing are in a good state
         // also make sure any lib functions are cancelled
         i2c_stats.ev_arlo++;
-        printf("TODO Arbitration Lost\n");
     }
     HAL_I2C_EV_IRQHandler( &i2c_handle );
     // TODO EV handler will unset an Ack Failure flag but this seems to always
@@ -515,17 +517,18 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
             buf.operation = OP_FOLLOW_TX_WAIT;
             return;
         }
-        buf.size = size;
-        if( !buf.size ){
-            printf("TODO: return_size==0 -> abort sequential tx\n");
+        if( size < 1 ){ // never leave the leader waiting with nothing to send
+            buf.data[0] = 0;
+            size = 1;
         }
+        buf.size = size;
         buf.operation = OP_FOLLOW_TX_READY;
         error = HAL_I2C_Slave_Sequential_Transmit_IT( &i2c_handle
                 , buf.data
                 , buf.size
                 , I2C_LAST_FRAME
                 );
-        if( error ){ printf("ftx failed: %i\n", error); }
+        if( error ){ i2c_stats.follow_start_fail++; }
         else{ buf.operation = OP_FOLLOW_TX; }
     } else {
         i2c_stats.follow_addr_rx++;
@@ -536,7 +539,7 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
                     , I2C_NEXT_FRAME
                     );
         );
-        if( error ){ printf("frx failed: %i\n", error); }
+        if( error ){ i2c_stats.follow_start_fail++; }
         else { buf.operation = OP_FOLLOW_RX; }
     }
 }
@@ -585,7 +588,6 @@ void HAL_I2C_ListenCpltCallback( I2C_HandleTypeDef* hi2c )
     BLOCK_IRQS(
         if( HAL_I2C_EnableListen_IT( &i2c_handle ) != HAL_OK ){
             i2c_stats.listen_fail++;
-            printf("i2c enable listen failed: %x\n", hi2c->State);
         } else { buf.operation = OP_LISTEN; busy_end(); }
     );
 }
