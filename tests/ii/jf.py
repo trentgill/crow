@@ -147,7 +147,17 @@ def main():
     c2c.load(A, 1, 2)
     c2c.load(B, 2, 1)
     jf = jf_open()
+    try:
+        _main(args, A, B, jf)
+    finally:
+        if jf:
+            jf.close()
+
+
+def _main(args, A, B, jf):
     # the switches JF reports: answers to compare against (nobody moves them)
+    for c in (A, B):
+        c.lua("local _ = ii.jf[1]")  # JF at its first address (ii.jf[n] sticks)
     A.lua("JS={} ii.jf.event=function(e,v) JS[e.name]=v end ii.jf.get('speed') ii.jf.get('tsc')")
     time.sleep(0.2)
     g1 = {"A": int(float(A.lua("print(JS.speed)")[-1])), "B": int(float(A.lua("print(JS.tsc)")[-1]))}
@@ -156,18 +166,14 @@ def main():
     os.makedirs(os.path.join(HERE, "results"), exist_ok=True)
     out = open(os.path.join(HERE, "results", args.label + ".jsonl"), "a")
     fails = 0
-    try:
-        for _ in range(args.repeat):
-            for name in args.case or list(CASES):
-                r = run(A, B, jf, name, CASES[name], vals, g1)
-                fails += not r["pass"]
-                out.write(json.dumps(r) + "\n")
-                out.flush()
-                print("%s %s" % ("PASS" if r["pass"] else "FAIL", name))
-                print(summary(r), flush=True)
-    finally:
-        if jf:
-            jf.close()
+    for _ in range(args.repeat):
+        for name in args.case or list(CASES):
+            r = run(A, B, jf, name, CASES[name], vals, g1)
+            fails += not r["pass"]
+            out.write(json.dumps(r) + "\n")
+            out.flush()
+            print("%s %s" % ("PASS" if r["pass"] else "FAIL", name))
+            print(summary(r), flush=True)
     print("%d failed" % fails)
 
 

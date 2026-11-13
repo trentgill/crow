@@ -157,18 +157,21 @@ ii.jf.event = function(e, v)
         return
     end
     local want = J.fifo and table.remove(J.fifo, 1) or J.want
-    -- JF applies a setter on its next audio block (0.67 ms), so a query
-    -- straight after a set may still see the one before it
-    local prev = J.prev
-    if J.fifo then J.prev = want end
-    if want and math.abs(v - want) < 0.0003 then J.ok = J.ok + 1
-    elseif prev and math.abs(v - prev) < 0.0003 then J.ok = J.ok + 1; J.late = J.late + 1
+    -- JF applies setters on its next audio block (every 0.67 ms), so a query
+    -- straight after a set may still see an earlier one: two earlier when two
+    -- set+get pairs land inside one block (the metro jitters)
+    local prev, prev2 = J.prev, J.prev2
+    if J.fifo then J.prev2 = prev; J.prev = want end
+    local function near(x) return x and math.abs(v - x) < 0.0003 end
+    if near(want) then J.ok = J.ok + 1
+    elseif near(prev) or near(prev2) then J.ok = J.ok + 1; J.late = J.late + 1
     else J.bad = J.bad + 1; J.last_bad = v; J.bads = (J.bads or '') .. ',' .. e.name .. tostring(v) end
 end
 -- crow A works on the speed switch and run; crow B on the mode switch and
 -- transpose, so two leaders never send the same bytes (identical transfers
 -- from two leaders merge into one on the wire, which hides arbitration)
 function runj(n, period, per, kind, g1want, raw0, vals, who)
+    local _ = ii.jf[1] -- JF at its first address (ii.jf[n] sticks)
     local V = (vals == 'all') and JALL or JRAW
     local g1, g2, set2, off = 'speed', 'run', ii.jf.run, 0
     if who == 'B' then g1, g2, set2, off = 'tsc', 'transpose', ii.jf.transpose, 1 end
