@@ -69,8 +69,12 @@ static void Sys_Clk_Config(void)
                        ;
     clk.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
     clk.AHBCLKDivider  = RCC_SYSCLK_DIV1;
-    clk.APB1CLKDivider = RCC_HCLK_DIV2;
-    clk.APB2CLKDivider = RCC_HCLK_DIV1;
+    // APB1 is rated to 54MHz and APB2 to 108MHz. TIMPRE keeps every timer
+    // kernel at HCLK (216MHz), as before, so timer periods do not change.
+    // Peripherals clocked from PCLK do change: SPI1 (ads131) and I2C1 (ii).
+    clk.APB1CLKDivider = RCC_HCLK_DIV4;
+    clk.APB2CLKDivider = RCC_HCLK_DIV2;
+    __HAL_RCC_TIMCLKPRESCALER(RCC_TIMPRES_ACTIVATED);
     if(HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_7) != HAL_OK){
         Error_Handler();
     }

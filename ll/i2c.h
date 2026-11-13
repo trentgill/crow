@@ -14,9 +14,16 @@
 // #define I2C_TIMING_STABLE  0xD0421C0C // runs at 55kHz
 // #define I2C_TIMING_SPEED   0xA0420B07 // runs at 320kHz
 // new v4.0.2 after much research of i2c & setting up a high-cap setup
-#define I2C_TIMING_STABLE  0xA0411626 // 97~148kHz depending on bus capacitance
-#define I2C_TIMING_SPEED   0x60440B13 // 165~350kHz depending on bus capacitance
-#define I2C_TIMING_CLASSIC 0xB042080B // old timings for regression testing
+// v4.0.2 values were tuned with I2C1 clocked from a 108MHz PCLK1, which is
+// over the 54MHz APB1 rating. these are the same SCL low/high, setup and hold
+// times re-expressed for 54MHz: SCL low and high within ~1%, setup and hold
+// rounded up. counts below are in kernel clock cycles (field + 1)
+//   was 0xA0411626: presc 11 -> 5, scll 39 -> 43, sclh 23 -> 25, scldel 5 -> 6
+#define I2C_TIMING_STABLE  0x4051182A // 97~148kHz depending on bus capacitance
+//   was 0x60440B13: presc 7 -> 3, scll 20 -> 23, sclh 12 -> 14, sdadel 4 -> 5, scldel 5 -> 6
+#define I2C_TIMING_SPEED   0x20550D16 // 165~350kHz depending on bus capacitance
+//   was 0xB042080B: presc 12 -> 6, the rest unchanged (exact)
+#define I2C_TIMING_CLASSIC 0x5042080B // old timings for regression testing
   // 157~320kHz for classic mode.
 
 #define I2Cx                            I2C1
