@@ -39,9 +39,12 @@ def flash_b(binfile):
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    binfile = args[0] if args else os.path.join(HERE, "..", "..", "crow.bin")
-    only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else "AB"
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("binfile", nargs="?", default=os.path.join(HERE, "..", "..", "crow.bin"))
+    ap.add_argument("--only", default="AB")
+    a = ap.parse_args()
+    binfile, only = a.binfile, a.only
     # B first: a crow that boots while the ii bus is held low (SCL low) starts
     # its bootloader instead of the app, and a stuck B can be what holds it
     if "B" in only:

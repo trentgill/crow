@@ -22,6 +22,7 @@ volatile static int getIdx = 0;
 // the system event queue is a circular array of event records
 // NOTE be aware of event_t and MAX_EVENTS for RAM usage
 volatile static event_t sysEvents[ MAX_EVENTS ];
+volatile static uint8_t full_pending = 0; // event_post found the queue full
 
 // initialize event handler
 void events_init() {
@@ -47,6 +48,12 @@ void events_clear(void)
 // returns non-zero if an event was available
 void event_next( void ){
     event_t* e = NULL;
+
+    if( full_pending ){
+        full_pending = 0;
+        printf("event queue full!\n");
+        Caw_send_luachunk("event queue full!");
+    }
 
     BLOCK_IRQS(
         // if pointers are equal, the queue is empty... don't allow idx's to wrap!
@@ -90,8 +97,7 @@ uint8_t event_post( event_t *e ) {
     Telemetry_event_depth( (putIdx - getIdx + MAX_EVENTS) % MAX_EVENTS );
     if( !status ){
         Telemetry_count( TM_event_full, 1 );
-        printf("event queue full!\n");
-        Caw_send_luachunk("event queue full!");
+        full_pending = 1; // reported by event_next: this can run in an interrupt
     }
 
     return status;

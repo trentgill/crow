@@ -102,8 +102,13 @@ def summary(r):
         errs = {k: v for k, v in d.items() if not k.startswith(("T.", "R.")) and v and k not in (
             "lead_tx", "lead_rx", "lead_tx_done", "lead_rx_done", "follow_addr_rx", "follow_addr_tx",
             "follow_rx_done", "follow_tx_done", "busy_max_us",
-            "isr", "cr1", "cr2", "hal_state", "hal_mode", "hal_error", "op", "scl", "sda")}
+            "isr", "cr1", "cr2", "hal_state", "hal_mode", "hal_error", "op", "scl", "sda")
+            and not k.startswith("stuck_")}
         s.append("  %s: busy_max %dus  %s" % (who, d.get("busy_max_us", 0), errs or "no errors"))
+        if d.get("recover"):
+            s.append("     last reset: op %d hal 0x%x isr 0x%x cr1 0x%x cr2 0x%x lines(scl,sda) %s" % (
+                d.get("stuck_op", 0), d.get("stuck_hal", 0), d.get("stuck_isr", 0), d.get("stuck_cr1", 0),
+                d.get("stuck_cr2", 0), bin(d.get("stuck_lines", 0))))
         if d.get("op") != 2 or not (d.get("scl") and d.get("sda")):
             s.append("     STUCK: op %s hal_state 0x%x mode 0x%x err 0x%x isr 0x%x cr1 0x%x cr2 0x%x scl %s sda %s" % (
                 d.get("op"), d.get("hal_state", 0), d.get("hal_mode", 0), d.get("hal_error", 0),
@@ -112,15 +117,21 @@ def summary(r):
 
 
 def passed(r):
+    """Nothing corrupted, duplicated or answered wrongly; every message either
+    arrived or was counted as dropped by its sender (queue full, or given up
+    after retrying); and no driver had to reset itself."""
     for who, other in (("A", "B"), ("B", "A")):
         if who not in r["leaders"]:
             continue
         L, F = r[who], r[other]
-        if F.get("R.n", 0) != L.get("T.sent", 0) or L.get("T.qok", 0) != L.get("T.qsent", 0):
+        if F.get("R.bad", 0) or F.get("R.dup", 0) or F.get("R.ooo", 0) or L.get("T.qbad", 0):
             return False
-        if F.get("R.gap", 0) or F.get("R.dup", 0) or F.get("R.bad", 0) or F.get("R.ooo", 0):
+        out = L.get("T.sent", 0) + L.get("T.qsent", 0)
+        arrived = F.get("R.n", 0) + L.get("T.qok", 0)
+        dropped = L.get("q_full", 0) + L.get("abandon", 0)
+        if arrived + dropped != out:
             return False
-    return True
+    return not (r["A"].get("recover", 0) or r["B"].get("recover", 0))
 
 
 def main():

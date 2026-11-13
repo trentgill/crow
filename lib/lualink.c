@@ -562,6 +562,31 @@ static int _ii_lead( lua_State *L )
     lua_settop(L, 0);
     return 0;
 }
+// ii_trace()         -> the i2c event trace as text, one event per line
+// ii_trace('restart')
+static int _ii_trace( lua_State *L )
+{
+    if( lua_type(L, 1) == LUA_TSTRING ){
+        I2C_TraceRestart();
+        lua_settop(L, 0);
+        return 0;
+    }
+    lua_settop(L, 0);
+    luaL_Buffer b;
+    luaL_buffinit(L, &b);
+    uint32_t t, p[5], t0 = 0;
+    char line[64];
+    for( int i=0; I2C_GetTrace(i, &t, p); i++ ){
+        if( i == 0 ){ t0 = t; }
+        snprintf( line, sizeof(line), "%lu ev%lu isr%04lx op%lu hal%02lx a%lu\n"
+                , (unsigned long)((t - t0) / 216), (unsigned long)p[1], (unsigned long)p[0]
+                , (unsigned long)p[2], (unsigned long)p[3], (unsigned long)p[4] );
+        luaL_addstring(&b, line);
+    }
+    luaL_pushresult(&b);
+    return 1;
+}
+
 // ii_stats()        -> table of i2c driver counters since the last reset
 // ii_stats('reset') -> zero them
 static int _ii_stats( lua_State *L )
@@ -579,6 +604,7 @@ static int _ii_stats( lua_State *L )
     STAT(lead_tx) STAT(lead_rx) STAT(lead_tx_done) STAT(lead_rx_done)
     STAT(start_busy) STAT(start_state) STAT(ready_timeout) STAT(abort_done)
     STAT(recover) STAT(bus_clocks) STAT(scl_held) STAT(sda_held)
+    STAT(stuck_op) STAT(stuck_isr) STAT(stuck_cr1) STAT(stuck_cr2) STAT(stuck_hal) STAT(stuck_lines)
     STAT(follow_addr_rx) STAT(follow_addr_tx) STAT(follow_rx_done) STAT(follow_tx_done)
     STAT(follow_defer) STAT(follow_stale) STAT(follow_start_fail)
     STAT(err_af) STAT(err_arlo) STAT(err_berr) STAT(err_ovr) STAT(err_other)
@@ -901,6 +927,7 @@ static const struct luaL_Reg libCrow[]=
     , { "ii_lead"          , _ii_lead          }
     , { "ii_lead_bytes"    , _ii_lead_bytes    }
     , { "ii_stats"         , _ii_stats         }
+    , { "ii_trace"         , _ii_trace         }
     , { "ii_set_add"       , _ii_address       }
     , { "ii_get_add"       , _ii_get_address   }
         // metro

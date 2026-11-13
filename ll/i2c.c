@@ -59,6 +59,46 @@ static void busy_end( void ){
     }
 }
 
+// Event trace, for finding out how the driver got stuck. The ring stops
+// recording at the first reset so it holds the run-up to it. ii_trace() reads
+// it; ii_trace('restart') clears it. It is not cleared at boot.
+#ifdef TELEMETRY
+#define TRACE_LEN 64
+typedef struct{ uint32_t t; uint16_t isr; uint8_t ev, op, hal, arg; } I2C_Trace_t;
+// in .noinit, so a trace survives a crash reset and can be read after it
+__attribute__((section(".noinit"))) static I2C_Trace_t trace[TRACE_LEN];
+__attribute__((section(".noinit"))) static volatile uint32_t trace_n;
+__attribute__((section(".noinit"))) static volatile uint32_t trace_frozen;
+static void TRACE( uint8_t ev, uint8_t arg )
+{
+    if( trace_frozen ){ return; }
+    BLOCK_IRQS(
+        I2C_Trace_t* e = &trace[trace_n++ % TRACE_LEN];
+        e->t   = DWT->CYCCNT;
+        e->isr = (uint16_t)(I2Cx->ISR & 0x7FFF) | ((I2Cx->ISR & I2C_ISR_DIR) ? 0x8000 : 0); // bit15: DIR, not BUSY
+        e->ev  = ev;
+        e->op  = buf.operation;
+        e->hal = i2c_handle.State;
+        e->arg = arg;
+    );
+}
+int I2C_GetTrace( int ix, uint32_t* t, uint32_t* packed )
+{
+    uint32_t n = trace_n;
+    uint32_t count = n < TRACE_LEN ? n : TRACE_LEN;
+    if( ix >= (int)count ){ return 0; }
+    I2C_Trace_t* e = &trace[(n - count + ix) % TRACE_LEN];
+    *t = e->t;
+    packed[0] = e->isr; packed[1] = e->ev; packed[2] = e->op; packed[3] = e->hal; packed[4] = e->arg;
+    return 1;
+}
+void I2C_TraceRestart( void ){ trace_n = 0; trace_frozen = 0; }
+#else
+#define TRACE(ev, arg)
+int I2C_GetTrace( int ix, uint32_t* t, uint32_t* packed ){ return 0; }
+void I2C_TraceRestart( void ){}
+#endif
+
 void I2C_GetDiag( I2C_Diag_t* d )
 {
     BLOCK_IRQS(
@@ -309,9 +349,21 @@ static void bus_clear( void )
 // transfer was in flight is lost.
 static void I2C_Recover( void )
 {
+    TRACE( 17, 0 );
+#ifdef TELEMETRY
+    trace_frozen = 1;
+#endif
     i2c_stats.recover++;
     HAL_NVIC_DisableIRQ( I2Cx_ER_IRQn ); // I2C_Init enables them again
     HAL_NVIC_DisableIRQ( I2Cx_EV_IRQn );
+    I2C_Diag_t d;
+    I2C_GetDiag( &d );
+    i2c_stats.stuck_op    = d.op;
+    i2c_stats.stuck_isr   = d.isr;
+    i2c_stats.stuck_cr1   = d.cr1;
+    i2c_stats.stuck_cr2   = d.cr2;
+    i2c_stats.stuck_hal   = (d.hal_state << 8) | d.hal_mode;
+    i2c_stats.stuck_lines = (d.scl << 1) | d.sda;
     uint8_t address = I2C_GetAddress();
     HAL_I2C_DeInit( &i2c_handle ); // resets I2C1 and releases the pins
     bus_clear();
@@ -340,6 +392,13 @@ int I2C_is_ready( void )
     return (buf.operation == OP_LISTEN);
 }
 
+// true when the peripheral has bus events the driver has not handled yet: an
+// address match, a STOP, or a transfer in progress on the bus
+static int bus_unsettled( void )
+{
+    return I2Cx->ISR & (I2C_ISR_BUSY | I2C_ISR_ADDR | I2C_ISR_STOPF);
+}
+
 int I2C_LeadTx( uint8_t  address
               , uint8_t* data
               , uint8_t  size
@@ -352,7 +411,10 @@ int I2C_LeadTx( uint8_t  address
         buf.address = address; // save in case of abort
         memcpy( buf.tx, data, size );
         BLOCK_IRQS(
-            if( HAL_I2C_DisableListen_IT( &i2c_handle ) != HAL_OK ){
+            if( bus_unsettled() ){
+                error |= 2; // means i2c bus was busy
+                i2c_stats.start_busy++;
+            } else if( HAL_I2C_DisableListen_IT( &i2c_handle ) != HAL_OK ){
                 // a follower transfer began since the check above: leave it be
                 error |= 1;
                 i2c_stats.start_state++;
@@ -365,6 +427,7 @@ int I2C_LeadTx( uint8_t  address
                 i2c_stats.start_busy++;
                 HAL_I2C_ListenCpltCallback( &i2c_handle ); // re-enable listen
             } else { buf.operation = OP_LEAD_TX; i2c_stats.lead_tx++; busy_start(); }
+            TRACE( 14, error );
         );
     } else {
         printf("can't leadTx because operation=%i\n",buf.operation);
@@ -388,7 +451,10 @@ int I2C_LeadRx( uint8_t  address
         buf.command = data[0];
         memcpy( buf.tx, data, size );
         BLOCK_IRQS(
-            if( HAL_I2C_DisableListen_IT( &i2c_handle ) != HAL_OK ){
+            if( bus_unsettled() ){
+                error |= 0x2;
+                i2c_stats.start_busy++;
+            } else if( HAL_I2C_DisableListen_IT( &i2c_handle ) != HAL_OK ){
                 error |= 0x1;
                 i2c_stats.start_state++;
             } else if( __HAL_I2C_GET_FLAG( &i2c_handle, I2C_FLAG_BUSY ) ){
@@ -411,6 +477,7 @@ int I2C_LeadRx( uint8_t  address
                 i2c_stats.lead_rx++;
                 busy_start();
             }
+            TRACE( 15, error );
         );
     } else {
         printf("can't leadRx because operation=%i\n",buf.operation);
@@ -427,6 +494,7 @@ int I2C_LeadRx( uint8_t  address
 #define I2C_NO_OPTION_FRAME     (0xFFFF0000U)
 void I2Cx_EV_IRQHandler( void )
 {
+    TRACE( 1, 0 );
     // NB: nothing in this file's interrupt paths may printf or send over USB:
     // both share state (the heap, the USB stack) with the main loop.
 
@@ -466,6 +534,7 @@ void I2Cx_EV_IRQHandler( void )
 // finished sending
 void HAL_I2C_MasterTxCpltCallback( I2C_HandleTypeDef* h )
 {
+    TRACE( 11, 0 );
     if( buf.operation == OP_LEAD_RX ){
         BLOCK_IRQS(
             //if( HAL_I2C_Master_Receive_IT( &i2c_handle
@@ -485,6 +554,7 @@ void HAL_I2C_MasterTxCpltCallback( I2C_HandleTypeDef* h )
 // received response from follower
 void HAL_I2C_MasterRxCpltCallback( I2C_HandleTypeDef* h )
 {
+    TRACE( 12, 0 );
     i2c_stats.lead_rx_done++;
     (*lead_response)( buf.address>>1
                     , buf.command
@@ -503,6 +573,7 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
                          , uint16_t           AddrMatchCode
                          )
 {
+    TRACE( 3, TransferDirection );
     uint8_t error = 0;
     busy_start();
     if( TransferDirection ){ // Request data
@@ -514,6 +585,7 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
             // ADDR stays set, so the peripheral holds SCL low until the main
             // loop has the answer and calls I2C_FollowRespond()
             i2c_stats.follow_defer++;
+            TRACE( 5, 0 );
             buf.operation = OP_FOLLOW_TX_WAIT;
             return;
         }
@@ -546,6 +618,7 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
 
 int I2C_FollowRespond( uint8_t* data, int size )
 {
+    TRACE( 6, 0 );
     int error = 1;
     if( size > I2C_MAX_CMD_BYTES ){ size = I2C_MAX_CMD_BYTES; }
     if( size < 1 ){ data = (uint8_t*)"\0"; size = 1; } // never leave the leader waiting
@@ -569,6 +642,7 @@ int I2C_FollowRespond( uint8_t* data, int size )
 
 void HAL_I2C_SlaveRxCpltCallback( I2C_HandleTypeDef* h )
 {
+    TRACE( 7, 0 );
     // triggered by STOPF flag in EV_IrqHandler
     i2c_stats.follow_rx_done++;
     (*follow_action)( buf.data );
@@ -577,17 +651,22 @@ void HAL_I2C_SlaveRxCpltCallback( I2C_HandleTypeDef* h )
 
 void HAL_I2C_SlaveTxCpltCallback( I2C_HandleTypeDef* h )
 {
+    TRACE( 8, 0 );
     i2c_stats.follow_tx_done++;
-    busy_end();
-    buf.operation = OP_LISTEN;
+    // The leader has NACKed our last byte but not yet sent STOP. Stay out of
+    // OP_LISTEN until the STOP arrives (the HAL then calls ListenCplt): leading
+    // before then left a stale STOPF that the master interrupt took as the end
+    // of its own write, and the bus stalled.
 }
 
 // follower action/request completed
 void HAL_I2C_ListenCpltCallback( I2C_HandleTypeDef* hi2c )
 {
+    TRACE( 9, 0 );
     BLOCK_IRQS(
         if( HAL_I2C_EnableListen_IT( &i2c_handle ) != HAL_OK ){
             i2c_stats.listen_fail++;
+            TRACE( 10, hi2c->State );
         } else { buf.operation = OP_LISTEN; busy_end(); }
     );
 }
@@ -598,6 +677,7 @@ void HAL_I2C_ListenCpltCallback( I2C_HandleTypeDef* hi2c )
 
 void I2Cx_ER_IRQHandler( void )
 {
+    TRACE( 2, 0 );
     buf.operation = OP_ERROR;
     HAL_I2C_ER_IRQHandler( &i2c_handle );
 }
@@ -609,6 +689,7 @@ void I2Cx_ER_IRQHandler( void )
 // I2C_ITError
 void HAL_I2C_ErrorCallback( I2C_HandleTypeDef* h )
 {
+    TRACE( 13, (uint8_t)h->ErrorCode );
     uint32_t e = h->ErrorCode;
     if( e & HAL_I2C_ERROR_AF   ){ i2c_stats.err_af++; }
     if( e & HAL_I2C_ERROR_ARLO ){ i2c_stats.err_arlo++; }
@@ -638,6 +719,7 @@ void HAL_I2C_ErrorCallback( I2C_HandleTypeDef* h )
 
 void HAL_I2C_AbortCpltCallback( I2C_HandleTypeDef* h )
 {
+    TRACE( 18, 0 );
     i2c_stats.abort_done++;
     HAL_I2C_ListenCpltCallback( &i2c_handle );
 }
