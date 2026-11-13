@@ -562,6 +562,31 @@ static int _ii_lead( lua_State *L )
     lua_settop(L, 0);
     return 0;
 }
+// ii_stats()        -> table of i2c driver counters since the last reset
+// ii_stats('reset') -> zero them
+static int _ii_stats( lua_State *L )
+{
+    if( lua_type(L, 1) == LUA_TSTRING ){
+        I2C_ResetStats();
+        lua_settop(L, 0);
+        return 0;
+    }
+    I2C_Stats_t s;
+    BLOCK_IRQS( s = i2c_stats; );
+    lua_settop(L, 0);
+    lua_createtable(L, 0, 24);
+#define STAT(f) lua_pushinteger(L, s.f); lua_setfield(L, -2, #f);
+    STAT(lead_tx) STAT(lead_rx) STAT(lead_tx_done) STAT(lead_rx_done)
+    STAT(start_busy) STAT(start_state) STAT(ready_timeout) STAT(abort_done)
+    STAT(follow_addr_rx) STAT(follow_addr_tx) STAT(follow_rx_done) STAT(follow_tx_done)
+    STAT(err_af) STAT(err_arlo) STAT(err_berr) STAT(err_ovr) STAT(err_other)
+    STAT(ev_arlo) STAT(listen_fail)
+    STAT(q_full) STAT(retry) STAT(abandon) STAT(fq_full)
+    STAT(busy_max_us)
+#undef STAT
+    return 1;
+}
+
 static int _ii_lead_bytes( lua_State *L )
 {
     int nargs = lua_gettop(L);
@@ -867,6 +892,7 @@ static const struct luaL_Reg libCrow[]=
     , { "ii_pullup"        , _ii_pullup        }
     , { "ii_lead"          , _ii_lead          }
     , { "ii_lead_bytes"    , _ii_lead_bytes    }
+    , { "ii_stats"         , _ii_stats         }
     , { "ii_set_add"       , _ii_address       }
     , { "ii_get_add"       , _ii_get_address   }
         // metro

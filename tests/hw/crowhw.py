@@ -18,8 +18,13 @@ APP_ADDRESS = "0x08020000"
 US_WRAP = (1 << 32) // 216  # sys_telemetry('us') wraps with the 32-bit cycle counter
 
 
-def find_port():
-    ports = glob.glob(PORT_GLOB)
+def find_port(usb_serial=None):
+    """crow's serial port. With several crows attached, name one by its USB
+    serial number (or set CROW_SERIAL) rather than taking the first."""
+    usb_serial = usb_serial or os.environ.get("CROW_SERIAL")
+    ports = sorted(glob.glob(PORT_GLOB))
+    if usb_serial:
+        ports = [p for p in ports if p.endswith("_%s-if00" % usb_serial)]
     return ports[0] if ports else None
 
 
@@ -74,11 +79,12 @@ def modemmanager_ignores(port):
 
 
 class Crow:
-    def __init__(self, settle=None):
+    def __init__(self, settle=None, usb_serial=None, stlink=None):
+        self.usb_serial = usb_serial
         self.ser = None
         self.events = []  # ^^event(...) lines seen while waiting for something else
         self.boot_lines = []  # what crow said while starting, after the last reset
-        self._stlink = None
+        self._stlink = stlink
         self._n = 0
         # ModemManager probes a new tty for a few seconds and types 'test' into it,
         # unless a udev rule tells it not to (see README.md)
@@ -90,10 +96,10 @@ class Crow:
     def wait_port(self, timeout=15.0, gone_first=False):
         t0 = time.monotonic()
         if gone_first:
-            while find_port() and time.monotonic() - t0 < 3.0:
+            while find_port(self.usb_serial) and time.monotonic() - t0 < 3.0:
                 time.sleep(0.005)
         while time.monotonic() - t0 < timeout:
-            p = find_port()
+            p = find_port(self.usb_serial)
             if p:
                 return p, time.monotonic() - t0
             time.sleep(0.005)

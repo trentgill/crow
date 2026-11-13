@@ -45,6 +45,23 @@ static uint8_t pullup_state = 1;
 
 static uint32_t i2c_timings = I2C_TIMING_STABLE; // default timings
 
+I2C_Stats_t i2c_stats;
+static uint32_t busy_since = 0; // DWT cycles when we last left OP_LISTEN, 0 = listening
+
+static void busy_start( void ){ if( !busy_since ){ busy_since = DWT->CYCCNT | 1; } }
+static void busy_end( void ){
+    if( busy_since ){
+        uint32_t us = (DWT->CYCCNT - busy_since) / (SystemCoreClock / 1000000);
+        if( us > i2c_stats.busy_max_us ){ i2c_stats.busy_max_us = us; }
+        busy_since = 0;
+    }
+}
+
+void I2C_ResetStats( void )
+{
+    BLOCK_IRQS( memset( &i2c_stats, 0, sizeof(i2c_stats) ); );
+}
+
 
 //////////////////////////////
 // public definitions
@@ -242,6 +259,7 @@ int I2C_is_ready( void )
         default: // all others
             if( --timeout <= 0 ){
                 buf.operation = OP_ABORT;
+                i2c_stats.ready_timeout++;
                 HAL_I2C_Master_Abort_IT( &i2c_handle, buf.address );
             }
             break;
@@ -266,11 +284,13 @@ int I2C_LeadTx( uint8_t  address
                     , size
                     ) != HAL_OK ){
                 error |= 2; // means i2c bus was busy
+                i2c_stats.start_busy++;
                 HAL_I2C_ListenCpltCallback( &i2c_handle ); // re-enable listen
-            } else { buf.operation = OP_LEAD_TX; }
+            } else { buf.operation = OP_LEAD_TX; i2c_stats.lead_tx++; busy_start(); }
         );
     } else {
         printf("can't leadTx because operation=%i\n",buf.operation);
+        i2c_stats.start_state++;
         error = 1;
     }
     return error;
@@ -294,6 +314,7 @@ int I2C_LeadRx( uint8_t  address
             } else if( __HAL_I2C_GET_FLAG( &i2c_handle, I2C_FLAG_BUSY ) ){
                 // NB: Explicitly check BUSY flag as Sequential_Transmit doesn't
                 error |= 0x2;
+                i2c_stats.start_busy++;
                 HAL_I2C_ListenCpltCallback( &i2c_handle ); // re-enable listen
             } else if( HAL_I2C_Master_Sequential_Transmit_IT( &i2c_handle
                             , address
@@ -302,11 +323,13 @@ int I2C_LeadRx( uint8_t  address
                             , I2C_FIRST_FRAME
                             ) != HAL_OK ){
                 error |= 0x4;
+                i2c_stats.start_busy++;
                 HAL_I2C_ListenCpltCallback( &i2c_handle ); // re-enable listen
-            } else { buf.operation = OP_LEAD_RX; }
+            } else { buf.operation = OP_LEAD_RX; i2c_stats.lead_rx++; busy_start(); }
         );
     } else {
         printf("can't leadRx because operation=%i\n",buf.operation);
+        i2c_stats.start_state++;
         error = 8;
     }
     return error;
@@ -336,6 +359,7 @@ void I2Cx_EV_IRQHandler( void )
         // the losing module seems to cancel it's transmission
         // just need to check that rxing & txing are in a good state
         // also make sure any lib functions are cancelled
+        i2c_stats.ev_arlo++;
         printf("TODO Arbitration Lost\n");
     }
     HAL_I2C_EV_IRQHandler( &i2c_handle );
@@ -366,6 +390,7 @@ void HAL_I2C_MasterTxCpltCallback( I2C_HandleTypeDef* h )
                     ) != HAL_OK ){ printf("LeadRx failed\n"); }
         );
     } else { // buf.operation == OP_LEAD_TX
+        i2c_stats.lead_tx_done++;
         HAL_I2C_ListenCpltCallback( &i2c_handle );
     }
 }
@@ -373,6 +398,7 @@ void HAL_I2C_MasterTxCpltCallback( I2C_HandleTypeDef* h )
 // received response from follower
 void HAL_I2C_MasterRxCpltCallback( I2C_HandleTypeDef* h )
 {
+    i2c_stats.lead_rx_done++;
     (*lead_response)( buf.address>>1
                     , buf.command
                     , buf.data
@@ -391,7 +417,9 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
                          )
 {
     uint8_t error = 0;
+    busy_start();
     if( TransferDirection ){ // Request data
+        i2c_stats.follow_addr_tx++;
         buf.size = (*follow_request)( buf.data );
         if( !buf.size ){
             printf("TODO: return_size==0 -> abort sequential tx\n");
@@ -405,6 +433,7 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
         if( error ){ printf("ftx failed: %i\n", error); }
         else{ buf.operation = OP_FOLLOW_TX; }
     } else {
+        i2c_stats.follow_addr_rx++;
         BLOCK_IRQS(
             error = HAL_I2C_Slave_Sequential_Receive_IT( &i2c_handle
                     , buf.data
@@ -420,12 +449,15 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
 void HAL_I2C_SlaveRxCpltCallback( I2C_HandleTypeDef* h )
 {
     // triggered by STOPF flag in EV_IrqHandler
+    i2c_stats.follow_rx_done++;
     (*follow_action)( buf.data );
     HAL_I2C_ListenCpltCallback( &i2c_handle );
 }
 
 void HAL_I2C_SlaveTxCpltCallback( I2C_HandleTypeDef* h )
 {
+    i2c_stats.follow_tx_done++;
+    busy_end();
     buf.operation = OP_LISTEN;
 }
 
@@ -434,8 +466,9 @@ void HAL_I2C_ListenCpltCallback( I2C_HandleTypeDef* hi2c )
 {
     BLOCK_IRQS(
         if( HAL_I2C_EnableListen_IT( &i2c_handle ) != HAL_OK ){
+            i2c_stats.listen_fail++;
             printf("i2c enable listen failed: %x\n", hi2c->State);
-        } else { buf.operation = OP_LISTEN; }
+        } else { buf.operation = OP_LISTEN; busy_end(); }
     );
 }
 
@@ -456,6 +489,13 @@ void I2Cx_ER_IRQHandler( void )
 // I2C_ITError
 void HAL_I2C_ErrorCallback( I2C_HandleTypeDef* h )
 {
+    uint32_t e = h->ErrorCode;
+    if( e & HAL_I2C_ERROR_AF   ){ i2c_stats.err_af++; }
+    if( e & HAL_I2C_ERROR_ARLO ){ i2c_stats.err_arlo++; }
+    if( e & HAL_I2C_ERROR_BERR ){ i2c_stats.err_berr++; }
+    if( e & HAL_I2C_ERROR_OVR  ){ i2c_stats.err_ovr++; }
+    if( e & ~(HAL_I2C_ERROR_AF | HAL_I2C_ERROR_ARLO
+             | HAL_I2C_ERROR_BERR | HAL_I2C_ERROR_OVR) ){ i2c_stats.err_other++; }
     // printf("I2C_ERROR_");
     // switch( h->ErrorCode ){
     //     case HAL_I2C_ERROR_BERR: printf("BERR\n"); break;
@@ -479,5 +519,6 @@ void HAL_I2C_ErrorCallback( I2C_HandleTypeDef* h )
 void HAL_I2C_AbortCpltCallback( I2C_HandleTypeDef* h )
 {
     timeout = I2C_READY_TIMEOUT;
+    i2c_stats.abort_done++;
     HAL_I2C_ListenCpltCallback( &i2c_handle );
 }

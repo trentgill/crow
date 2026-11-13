@@ -129,7 +129,7 @@ uint8_t ii_leader_enqueue( uint8_t address
                          )
 {
     int ix = queue_enqueue( l_qix );
-    if( ix < 0 ){ printf("queue full\n"); return 1; }
+    if( ix < 0 ){ i2c_stats.q_full++; printf("queue full\n"); return 1; }
 
     ii_q_t* q = &l_iq[ix];
 
@@ -153,7 +153,7 @@ uint8_t ii_leader_enqueue_bytes( uint8_t  address
                                )
 {
     int ix = queue_enqueue( l_qix );
-    if( ix < 0 ){ printf("queue full\n"); return 1; }
+    if( ix < 0 ){ i2c_stats.q_full++; printf("queue full\n"); return 1; }
 
     ii_q_t* q = &l_iq[ix];
 
@@ -208,9 +208,11 @@ void ii_leader_process( void )
 retry:
     if(retrying){
         retrying = false;
+        i2c_stats.abandon++;
         queue_dequeue(l_qix); // pop the value, abandoning this message
     } else {
         retrying = true;
+        i2c_stats.retry++;
         // DON'T POP QUEUE. we'll try it next time
     }
     return; 
@@ -307,6 +309,7 @@ static int follow_action( uint8_t* pdata )
 
     int ix = queue_enqueue( f_qix );
     if( ix < 0 ){
+        i2c_stats.fq_full++;
         printf("ii_follow queue overflow\n");
         return 1;
     } else {

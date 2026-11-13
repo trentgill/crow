@@ -57,6 +57,44 @@
 #define I2C_BUFFER_LEN    32
 
 
+///////////////////////////
+// counters, for ii.stats(). written from the i2c interrupts and from ii.c
+typedef struct{
+    // leading
+    uint32_t lead_tx;        // write transfers started
+    uint32_t lead_rx;        // query transfers started
+    uint32_t lead_tx_done;   // write completed (STOP sent, all bytes ACKed)
+    uint32_t lead_rx_done;   // query answer received
+    uint32_t start_busy;     // could not start: bus busy
+    uint32_t start_state;    // could not start: driver not listening
+    uint32_t ready_timeout;  // transfer took too long and was aborted
+    uint32_t abort_done;
+    // following
+    uint32_t follow_addr_rx; // our address matched, leader writing
+    uint32_t follow_addr_tx; // our address matched, leader reading
+    uint32_t follow_rx_done;
+    uint32_t follow_tx_done;
+    // errors (HAL ErrorCode bits, each counted)
+    uint32_t err_af;
+    uint32_t err_arlo;
+    uint32_t err_berr;
+    uint32_t err_ovr;
+    uint32_t err_other;
+    uint32_t ev_arlo;        // ARLO seen in the event interrupt
+    uint32_t listen_fail;    // could not re-enable listen
+    // ii layer
+    uint32_t q_full;         // leader queue full, message dropped
+    uint32_t retry;
+    uint32_t abandon;        // dropped after a failed retry
+    uint32_t fq_full;        // follower queue full, message dropped
+    // timing
+    uint32_t busy_max_us;    // longest time away from listening
+} I2C_Stats_t;
+
+extern I2C_Stats_t i2c_stats;
+void I2C_ResetStats( void );
+
+
 ///////////////////////////////////////
 // fnptr typedefs for low-level
 typedef void (*I2C_lead_callback_t)( uint8_t address, uint8_t command, uint8_t* rx_data );

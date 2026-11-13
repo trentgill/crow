@@ -41,6 +41,7 @@ ii.fastmode = i2c_fastmode
 ii.set_address = ii_set_add
 ii.get_address = ii_get_add
 ii.raw = ii_lead_bytes
+ii.stats = ii_stats
 
 -- to be deprecated
 ii.set = ii_lead
