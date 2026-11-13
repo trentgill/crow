@@ -97,6 +97,7 @@ ii.wtape.event = function(e, v)
 end
 function runw(n, period, per, kind, want)
     W = {sent=0, qsent=0, ok=0, bad=0, seq=0, want=want, fifo=(kind == 'wset') and {} or nil}
+    if kind == 'wset' then W.prev = want; W.want = nil end -- the speed before the first set
     -- swallow the answers to the bad getters before Lua looks them up
     ii.event_raw = function(addr, cmd) return addr == 0x71 and cmd ~= 132 end
     if MW then metro.free(MW.id) end

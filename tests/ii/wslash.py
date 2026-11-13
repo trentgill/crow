@@ -33,8 +33,8 @@ def run(A, B, name, spec):
         c.lua("ii.fastmode(0) rxreset() ii.stats('reset') T={} W={}")
     # the speed W/ should report while nobody sets it
     want = None
-    if kind in ("wq", "wbad"):
-        A.lua("ii.wtape.speed(1)")
+    if kind in ("wq", "wbad", "wset"):
+        A.lua("ii.wtape.speed(1)") if not os.environ.get("W_KEEP_TRANSPORT") else None
         time.sleep(0.2)
         want = 1.0
     if c2ckind:
