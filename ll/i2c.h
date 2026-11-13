@@ -72,6 +72,7 @@ typedef struct{
     uint32_t bus_clocks;     // SCL pulses sent to free a held SDA
     uint32_t scl_held;       // SCL still low after recovery (another device holds it)
     uint32_t sda_held;       // SDA still low after recovery
+    uint32_t idle_busy;      // bus left BUSY with both lines high (a leader vanished mid-transfer)
     // driver state just before the last reset
     uint32_t stuck_op, stuck_isr, stuck_cr1, stuck_cr2, stuck_hal, stuck_lines;
     uint32_t abort_done;

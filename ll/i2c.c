@@ -397,17 +397,43 @@ static void I2C_Recover( void )
     I2C_Init( address, lead_response, follow_action, follow_request, error_action );
 }
 
+// A leader that resets or is unplugged part-way through a transfer never sends
+// its STOP. Both lines go high, but every peripheral on the bus still counts it
+// as BUSY: none will start a transfer, and a follower waits for the rest of the
+// message. Nothing legitimate leaves both lines high that long mid-transfer.
+#define I2C_IDLE_BUSY_MS 5
+
+static int bus_idle_but_busy( uint32_t now )
+{
+    static uint32_t since = 0;
+    static uint8_t  seen  = 0;
+    int idle = (I2Cx->ISR & I2C_ISR_BUSY)
+            && HAL_GPIO_ReadPin( I2Cx_SCL_GPIO_PORT, I2Cx_SCL_PIN )
+            && HAL_GPIO_ReadPin( I2Cx_SDA_GPIO_PORT, I2Cx_SDA_PIN );
+    if( !idle ){ seen = 0; return 0; }
+    if( !seen ){ seen = 1; since = now; return 0; }
+    if( now - since > I2C_IDLE_BUSY_MS ){ seen = 0; return 1; }
+    return 0;
+}
+
 int I2C_is_ready( void )
 {
     static uint32_t since = 0;    // tick when the driver entered its current operation
     static I2C_OP_t since_op = OP_LISTEN;
 
     I2C_OP_t op = buf.operation;
+    uint32_t now = HAL_GetTick();
+    if( bus_idle_but_busy( now ) ){
+        // our recovery ends with a STOP, which lets every device see the bus free
+        i2c_stats.idle_busy++;
+        I2C_Recover();
+        since_op = buf.operation;
+        return (buf.operation == OP_LISTEN);
+    }
     if( op == OP_LISTEN ){
         since_op = op;
         return 1;
     }
-    uint32_t now = HAL_GetTick();
     if( op != since_op ){ // progress: restart the clock
         since_op = op;
         since = now;
