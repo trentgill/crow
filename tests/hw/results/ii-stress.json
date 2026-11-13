@@ -1,0 +1,408 @@
+{
+ "label": "ii-stress",
+ "date": "2026-11-12 18:54:02",
+ "metrics": {
+  "flash_image": {
+   "value": 316600,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "boot_to_usb": {
+   "value": 506.0224430053495,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "ram_static": {
+   "value": 36968,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "lua_heap_at_boot": {
+   "value": 80501,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "heap_claimed": {
+   "value": 106496,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "stack_peak": {
+   "value": 2472,
+   "unit": "bytes",
+   "better": null
+  },
+  "ram_free_for_scripts": {
+   "value": 92784,
+   "unit": "bytes",
+   "better": "higher"
+  },
+  "idle_cpu_busy": {
+   "value": 8.439225,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_dsp_block_avg": {
+   "value": 47.26369,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_block_max": {
+   "value": 51.46759,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_load": {
+   "value": 6.9244200000000005,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_loop_worst": {
+   "value": 171.037,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_cpu_busy": {
+   "value": 24.630560000000003,
+   "unit": "%",
+   "better": "lower"
+  },
+  "busy_dsp_block_avg": {
+   "value": 133.3188,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_dsp_block_max": {
+   "value": 165.463,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_loop_worst": {
+   "value": 307.7732,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_event_queue_peak": {
+   "value": 3,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "busy_lua_loop": {
+   "value": 229.374,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_loop": {
+   "value": 199.502,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_call": {
+   "value": 266.356,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_table": {
+   "value": 59.3,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_string": {
+   "value": 84.456,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_math": {
+   "value": 196.57,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_library": {
+   "value": 545.404,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_median": {
+   "value": 0.23039948428049684,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_p95": {
+   "value": 0.3279999946244061,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "print_20_lines_delivered": {
+   "value": 100.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_300_lines_delivered": {
+   "value": 100.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_throughput": {
+   "value": 734.8103674816334,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_druid_paced_time": {
+   "value": 797.5757399981376,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_druid_paced_rate": {
+   "value": 19.807523232886812,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_lines_unpaced_time": {
+   "value": 53.264949994627386,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_lines_unpaced_rate": {
+   "value": 296.5927875947218,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_burst_time": {
+   "value": 44.636798003921285,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_burst_rate": {
+   "value": 353.92323612935155,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_small_burst_time": {
+   "value": 11.091354012023658,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_small_burst_rate": {
+   "value": 267.1450209584817,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "print_script_time": {
+   "value": 31.68258600635454,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_lines_per_second": {
+   "value": 6610.6183188048,
+   "unit": "lines/s",
+   "better": "higher"
+  },
+  "loopback_worst_error": {
+   "value": 42.908999999999864,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "ramp_biggest_step": {
+   "value": 64.12029,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "clock_burst_event_queue_peak": {
+   "value": 10,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "watchdog_empty_loop": {
+   "value": 410.032877989579,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_c_call_loop": {
+   "value": 1001.0098860075232,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_print_loop": {
+   "value": 1064.2640389851294,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_pcall_loop": {
+   "value": 410.64714899403043,
+   "unit": "ms",
+   "better": null
+  },
+  "lua_allocatable": {
+   "value": 84,
+   "unit": "kB",
+   "better": "higher"
+  }
+ },
+ "checks": {
+  "version_reply": {
+   "ok": true,
+   "detail": "[\"^^version('v4.0.5-28-g9731e97')\"]"
+  },
+  "identity_reply": {
+   "ok": true,
+   "detail": ""
+  },
+  "core_voltage_scale_in_spec": {
+   "ok": true,
+   "detail": "216 MHz at VOS=3"
+  },
+  "bus_clocks_in_spec": {
+   "ok": true,
+   "detail": "APB1 54 MHz, APB2 108 MHz"
+  },
+  "busy_no_events_lost": {
+   "ok": true,
+   "detail": "0 dropped"
+  },
+  "busy_no_tx_dropped": {
+   "ok": true,
+   "detail": "0 bytes"
+  },
+  "latency_all_answered": {
+   "ok": true,
+   "detail": "200 of 200"
+  },
+  "print_20_lines_whole": {
+   "ok": true,
+   "detail": "20 intact of 20, 0 bytes dropped by the device"
+  },
+  "print_300_lines_whole": {
+   "ok": true,
+   "detail": "300 intact of 300, 0 bytes dropped by the device"
+  },
+  "upload_druid_paced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_lines_unpaced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_burst_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_small_burst_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "store_script": {
+   "ok": true,
+   "detail": "1399 ms"
+  },
+  "stored_script_runs_at_boot": {
+   "ok": true,
+   "detail": ""
+  },
+  "print_script_matches": {
+   "ok": true,
+   "detail": "15798 of 15798 bytes"
+  },
+  "clear_script": {
+   "ok": true,
+   "detail": "['^^pub(\"_clear\")']"
+  },
+  "repl_300_writes_all_run": {
+   "ok": true,
+   "detail": "300 of 300"
+  },
+  "repl_100_lines_one_write_all_run": {
+   "ok": true,
+   "detail": "100 of 100"
+  },
+  "repl_multiline_write_is_one_chunk": {
+   "ok": true,
+   "detail": "7"
+  },
+  "loopback_within_150mV": {
+   "ok": true,
+   "detail": "43 mV"
+  },
+  "ramp_is_smooth": {
+   "ok": true,
+   "detail": "173 samples, 64 mV"
+  },
+  "clock_50_wake_together": {
+   "ok": true,
+   "detail": "each ran 10 to 10 times, 0 events dropped"
+  },
+  "watchdog_empty_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_c_call_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_print_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_pcall_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_clock_coroutine_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_kill_not_swallowed_by_pcall": {
+   "ok": true,
+   "detail": "_w=nil"
+  },
+  "out_of_memory_survived": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_bus_fault_recovers": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_bus_fault_reported": {
+   "ok": true,
+   "detail": "!crash: BusFault pc=0x08037b1a lr=0x0803f58b psr=0x810f0000 sp=0x20006388 cfsr=0x00008200 "
+  },
+  "fault_undefined_instruction_recovers": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_undefined_instruction_reported": {
+   "ok": true,
+   "detail": "!crash: UsageFault pc=0x08037b2c lr=0x0803f58b psr=0x610f0000 sp=0x20006388 cfsr=0x0001000"
+  },
+  "fault_lua_panic_recovers": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_lua_panic_reported": {
+   "ok": true,
+   "detail": "!crash: lua panic: telemetry test panic"
+  },
+  "fault_stack_overflow_recovers": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_stack_overflow_reported": {
+   "ok": true,
+   "detail": "!crash: BusFault pc=0x00000000 lr=0x00000000 psr=0x00000000 sp=0x1ffffe90 cfsr=0x00000400 "
+  },
+  "crash_loop_ends_with_working_repl": {
+   "ok": true,
+   "detail": ""
+  },
+  "crash_loop_script_skipped_and_said_so": {
+   "ok": true,
+   "detail": "!crash: user script skipped after repeated crashes"
+  },
+  "crash_loop_script_still_stored": {
+   "ok": true,
+   "detail": ""
+  }
+ },
+ "version": "^^version('v4.0.5-28-g9731e97')"
+}
