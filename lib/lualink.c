@@ -609,7 +609,7 @@ static int _ii_stats( lua_State *L )
     STAT(follow_addr_rx) STAT(follow_addr_tx) STAT(follow_rx_done) STAT(follow_tx_done)
     STAT(follow_defer) STAT(follow_stale) STAT(follow_start_fail) STAT(follow_pad)
     STAT(err_af) STAT(err_arlo) STAT(err_berr) STAT(err_ovr) STAT(err_other)
-    STAT(ev_arlo) STAT(listen_fail)
+    STAT(ev_arlo) STAT(listen_fail) STAT(txdr_flush)
     STAT(q_full) STAT(retry) STAT(abandon) STAT(fq_full) STAT(nack_drop) STAT(abandon_tries) STAT(abandon_err)
     STAT(busy_max_us)
 #undef STAT

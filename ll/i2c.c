@@ -467,6 +467,17 @@ static int bus_unsettled( void )
     return I2Cx->ISR & (I2C_ISR_BUSY | I2C_ISR_ADDR | I2C_ISR_STOPF);
 }
 
+// A byte can be left in TXDR when a transfer we led ends early: the HAL's
+// error path (arbitration lost) does not flush it, and the next transfer we
+// lead would send it ahead of its own first byte. Flush before every lead.
+static void flush_txdr( void )
+{
+    if( !(I2Cx->ISR & I2C_ISR_TXE) ){
+        I2Cx->ISR = I2C_ISR_TXE; // writing TXE flushes TXDR
+        i2c_stats.txdr_flush++;
+    }
+}
+
 int I2C_LeadTx( uint8_t  address
               , uint8_t* data
               , uint8_t  size
@@ -487,7 +498,7 @@ int I2C_LeadTx( uint8_t  address
                 // a follower transfer began since the check above: leave it be
                 error |= 1;
                 i2c_stats.start_state++;
-            } else if( HAL_I2C_Master_Transmit_IT( &i2c_handle
+            } else if( flush_txdr(), HAL_I2C_Master_Transmit_IT( &i2c_handle
                     , address
                     , buf.tx
                     , size
@@ -538,7 +549,7 @@ int I2C_LeadRx( uint8_t  address
                 error |= 0x2;
                 i2c_stats.start_busy++;
                 HAL_I2C_ListenCpltCallback( &i2c_handle ); // re-enable listen
-            } else if( HAL_I2C_Master_Sequential_Transmit_IT( &i2c_handle
+            } else if( flush_txdr(), HAL_I2C_Master_Sequential_Transmit_IT( &i2c_handle
                             , address
                             , buf.tx
                             , size

@@ -97,6 +97,7 @@ typedef struct{
     uint32_t err_other;
     uint32_t ev_arlo;        // ARLO seen in the event interrupt
     uint32_t listen_fail;    // could not re-enable listen
+    uint32_t txdr_flush;     // a stale byte was flushed from TXDR before leading
     // ii layer
     uint32_t q_full;         // leader queue full, message dropped
     uint32_t retry;
