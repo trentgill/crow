@@ -579,6 +579,7 @@ static int _ii_stats( lua_State *L )
     STAT(lead_tx) STAT(lead_rx) STAT(lead_tx_done) STAT(lead_rx_done)
     STAT(start_busy) STAT(start_state) STAT(ready_timeout) STAT(abort_done)
     STAT(follow_addr_rx) STAT(follow_addr_tx) STAT(follow_rx_done) STAT(follow_tx_done)
+    STAT(follow_defer) STAT(follow_stale)
     STAT(err_af) STAT(err_arlo) STAT(err_berr) STAT(err_ovr) STAT(err_other)
     STAT(ev_arlo) STAT(listen_fail)
     STAT(q_full) STAT(retry) STAT(abandon) STAT(fq_full)
@@ -1147,7 +1148,7 @@ void L_handle_ii_followRx_cont( uint8_t cmd, int args, float* data )
     }
 }
 
-// FIXME called directly from ii lib for now
+// called from the main loop by ii_follow_process(), never from an interrupt
 float L_handle_ii_followRxTx( uint8_t cmd, int args, float* data )
 {
     lua_getglobal(L, "ii_followRxTx_handler");
@@ -1156,11 +1157,11 @@ float L_handle_ii_followRxTx( uint8_t cmd, int args, float* data )
     while(a-- > 0){
         lua_pushnumber(L, *data++);
     }
-    if( Lua_call_usercode(L, 1+args, 1) != LUA_OK ){
-        lua_pop( L, 1 );
+    float n = 0.0; // a handler that errors or returns a non-number answers 0
+    if( Lua_call_usercode(L, 1+args, 1) == LUA_OK ){
+        n = (float)lua_tonumber(L, -1);
     }
-    float n = luaL_checknumber(L, 1);
-    lua_pop( L, 1 );
+    lua_pop( L, 1 ); // the result, or the error message
     return n;
 }
 

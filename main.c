@@ -90,6 +90,7 @@ int main(void)
         }
         event_next(); // check/execute single event
         ii_leader_process();
+        ii_follow_process();
         Caw_send_queued();
     }
 }

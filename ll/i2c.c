@@ -17,6 +17,7 @@ typedef enum{ OP_NULL
             , OP_LEAD_RX
             , OP_FOLLOW_TX
             , OP_FOLLOW_TX_READY
+            , OP_FOLLOW_TX_WAIT // read request matched, answer not ready: SCL held
             , OP_FOLLOW_RX
             , OP_ABORT
 } I2C_OP_t;
@@ -37,7 +38,7 @@ static I2C_HandleTypeDef i2c_handle;
 
 static I2C_lead_callback_t   lead_response;
 static I2C_follow_callback_t follow_action;
-static I2C_follow_callback_t follow_request;
+static I2C_request_callback_t follow_request;
 static I2C_error_callback_t  error_action;
 
 static I2C_State_t buf;
@@ -84,7 +85,7 @@ void I2C_ResetStats( void )
 uint8_t I2C_Init( uint8_t               address
                 , I2C_lead_callback_t   lead_callback
                 , I2C_follow_callback_t follow_action_callback
-                , I2C_follow_callback_t follow_request_callback
+                , I2C_request_callback_t follow_request_callback
                 , I2C_error_callback_t  error_callback
                 )
 {
@@ -435,7 +436,17 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
     busy_start();
     if( TransferDirection ){ // Request data
         i2c_stats.follow_addr_tx++;
-        buf.size = (*follow_request)( buf.data );
+        // a repeated start straight after the leader wrote the request
+        int fresh = (buf.operation == OP_FOLLOW_RX);
+        int size = (*follow_request)( buf.data, fresh );
+        if( size < 0 ){
+            // ADDR stays set, so the peripheral holds SCL low until the main
+            // loop has the answer and calls I2C_FollowRespond()
+            i2c_stats.follow_defer++;
+            buf.operation = OP_FOLLOW_TX_WAIT;
+            return;
+        }
+        buf.size = size;
         if( !buf.size ){
             printf("TODO: return_size==0 -> abort sequential tx\n");
         }
@@ -459,6 +470,29 @@ void HAL_I2C_AddrCallback( I2C_HandleTypeDef* h
         if( error ){ printf("frx failed: %i\n", error); }
         else { buf.operation = OP_FOLLOW_RX; }
     }
+}
+
+int I2C_FollowRespond( uint8_t* data, int size )
+{
+    int error = 1;
+    if( size > I2C_MAX_CMD_BYTES ){ size = I2C_MAX_CMD_BYTES; }
+    if( size < 1 ){ data = (uint8_t*)"\0"; size = 1; } // never leave the leader waiting
+    BLOCK_IRQS(
+        if( buf.operation == OP_FOLLOW_TX_WAIT ){
+            memcpy( buf.data, data, size );
+            buf.size = size;
+            if( HAL_I2C_Slave_Sequential_Transmit_IT( &i2c_handle
+                    , buf.data
+                    , buf.size
+                    , I2C_LAST_FRAME
+                    ) == HAL_OK ){
+                buf.operation = OP_FOLLOW_TX;
+                error = 0;
+            }
+        }
+    );
+    if( error ){ i2c_stats.follow_stale++; }
+    return error;
 }
 
 void HAL_I2C_SlaveRxCpltCallback( I2C_HandleTypeDef* h )

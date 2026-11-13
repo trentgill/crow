@@ -40,7 +40,7 @@ typedef struct{
 // private declarations
 
 static void lead_callback( uint8_t address, uint8_t command, uint8_t* rx_data );
-static int follow_request( uint8_t* pdata );
+static int follow_request( uint8_t* pdata, int fresh );
 static int follow_action( uint8_t* pdata );
 static void error_action( int error_code );
 
@@ -261,49 +261,98 @@ static void lead_callback( uint8_t address, uint8_t command, uint8_t* rx_data )
                      );
 }
 
-static int _two_step_request = 0;
-static int follow_request( uint8_t* pdata )
-{
-    // remember previous response to enable separate TX/RX pairs for query
-    // some devices (eg Teletype) do requests as separate messages
-    static float response = 0.0;
-    static const ii_Cmd_t* c;
+// Follower requests (getters).
+//
+// The answer to 'query' runs a Lua handler, which must never happen inside the
+// i2c interrupt: that interrupt can land in the middle of the main loop's own
+// Lua, and the follower locks up. So a request is stored here and answered from
+// ii_follow_process() in the main loop. If a leader is already reading, the
+// peripheral holds SCL low (clock stretching) until the answer is sent.
+//
+// A request arrives two ways: written then read back with a repeated start
+// (crow, most leaders), or written in one transfer and read in a later one
+// (Teletype). 'input' and 'output' are plain C reads and are answered at once.
+typedef enum{ Q_IDLE, Q_PENDING, Q_READY } ii_Query_t;
+static volatile ii_Query_t q_state = Q_IDLE;
+static volatile bool q_reader_waiting = false; // a leader is reading: SCL is held
+static uint8_t q_req[II_MAX_RECEIVE_LEN]; // cmd byte + args
+static uint8_t q_resp[4];
+static int q_resp_len = 0;
 
-    if( _two_step_request == 1 ){
-        // response has already been set, so we just pass to encode
-        _two_step_request = 0; // unset 2-step
-    } else {
-        c = ii_find_command(ii_get_address(), *pdata);
-        float args[c->args];
-        decode_packet( args, &pdata[1], c, 1 );
-        switch( c->cmd ){
-            case II_GET+3: // 'input'
-                response = IO_GetADC( (int)args[0] - 1 ); // i2c is 1-based
-                break;
-            case II_GET+4: // 'output'
-                response = S_get_state( (int)args[0] - 1 ); // i2c is 1-based
-                break;
-            default: // 'query'
-                // DANGER!! run the Lua callback directly!
-                // Not safe, but going via event queue would introduce *big* latency
-                response = L_handle_ii_followRxTx( c->cmd
-                                , c->args
-                                , args
-                                );
-                break;
-        }
+// answer a request now if it needs no Lua, else -1
+static int answer_in_c( uint8_t* req, uint8_t* dest )
+{
+    const ii_Cmd_t* c = ii_find_command(ii_get_address(), req[0]);
+    if( c == NULL ){ return 0; }
+    float args[c->args > 0 ? c->args : 1];
+    decode_packet( args, &req[1], c, 1 );
+    switch( c->cmd ){
+        case II_GET+3: // 'input'
+            return encode( dest, c->return_type, IO_GetADC( (int)args[0] - 1 ) ); // i2c is 1-based
+        case II_GET+4: // 'output'
+            return encode( dest, c->return_type, S_get_state( (int)args[0] - 1 ) );
+        default: return -1;
     }
-    return encode( pdata, c->return_type, response );
+}
+
+// main loop only
+static void answer_in_lua( void )
+{
+    const ii_Cmd_t* c = ii_find_command(ii_get_address(), q_req[0]);
+    if( c == NULL ){ q_resp_len = 0; return; }
+    float args[c->args > 0 ? c->args : 1];
+    decode_packet( args, &q_req[1], c, 1 );
+    float response = L_handle_ii_followRxTx( c->cmd, c->args, args );
+    q_resp_len = encode( q_resp, c->return_type, response );
+}
+
+// i2c interrupt: a leader is reading from us
+static int follow_request( uint8_t* pdata, int fresh )
+{
+    if( fresh || q_state == Q_IDLE ){ // the request is in pdata
+        int n = answer_in_c( pdata, pdata );
+        if( n >= 0 ){ q_state = Q_IDLE; return n; }
+        memcpy( q_req, pdata, II_MAX_RECEIVE_LEN );
+        q_state = Q_PENDING;
+    }
+    if( q_state == Q_READY ){ // prepared after an earlier write (2-step)
+        memcpy( pdata, q_resp, q_resp_len );
+        q_state = Q_IDLE;
+        return q_resp_len;
+    }
+    q_reader_waiting = true;
+    return -1; // answered from ii_follow_process()
+}
+
+void ii_follow_process( void )
+{
+    if( q_state != Q_PENDING ){ return; }
+    answer_in_lua();
+    bool send = false;
+    BLOCK_IRQS(
+        if( q_reader_waiting ){
+            q_reader_waiting = false;
+            q_state = Q_IDLE;
+            send = true;
+        } else {
+            q_state = Q_READY; // keep it for the read that follows
+        }
+    );
+    if( send ){ I2C_FollowRespond( q_resp, q_resp_len ); }
 }
 
 static int follow_action( uint8_t* pdata )
 {
     // some ii leaders (eg TT) do requests as an action with args followed by
     // a request without args, which should use the prepared value
-    // here we capture GET cmds & prepare a val, and mark _two_step_request as true
-    if(ii_find_command(ii_get_address(), *pdata)->cmd >= II_GET){
-        follow_request(pdata); // process as a request, ignore response
-        _two_step_request = 1; // mark as a 2-step request
+    // here we capture GET cmds and prepare the answer for the read that follows
+    const ii_Cmd_t* c = ii_find_command(ii_get_address(), *pdata);
+    if( c != NULL && c->cmd >= II_GET ){
+        int n = answer_in_c( pdata, q_resp );
+        memcpy( q_req, pdata, II_MAX_RECEIVE_LEN );
+        if( n >= 0 ){ q_resp_len = n; q_state = Q_READY; }
+        else { q_state = Q_PENDING; }
+        q_reader_waiting = false;
         return 0;
     }
 

@@ -74,6 +74,8 @@ typedef struct{
     uint32_t follow_addr_tx; // our address matched, leader reading
     uint32_t follow_rx_done;
     uint32_t follow_tx_done;
+    uint32_t follow_defer;   // answer deferred to the main loop (SCL held)
+    uint32_t follow_stale;   // deferred answer ready after the leader gave up
     // errors (HAL ErrorCode bits, each counted)
     uint32_t err_af;
     uint32_t err_arlo;
@@ -107,6 +109,11 @@ void I2C_GetDiag( I2C_Diag_t* d );
 // fnptr typedefs for low-level
 typedef void (*I2C_lead_callback_t)( uint8_t address, uint8_t command, uint8_t* rx_data );
 typedef int (*I2C_follow_callback_t)( uint8_t* pdata );
+// a leader is reading from us. `fresh` is true when pdata holds the request it
+// wrote just before (repeated start), false when the request came in an earlier
+// transfer. return the number of bytes to send, or -1 to answer later with
+// I2C_FollowRespond() (SCL is held low until then)
+typedef int (*I2C_request_callback_t)( uint8_t* pdata, int fresh );
 typedef void (*I2C_error_callback_t)( int error_code );
 
 
@@ -115,7 +122,7 @@ typedef void (*I2C_error_callback_t)( int error_code );
 uint8_t I2C_Init( uint8_t               address
                 , I2C_lead_callback_t   lead_callback
                 , I2C_follow_callback_t follow_action_callback
-                , I2C_follow_callback_t follow_request_callback
+                , I2C_request_callback_t follow_request_callback
                 , I2C_error_callback_t  error_callback );
 void I2C_DeInit( void );
 
@@ -128,6 +135,11 @@ void I2C_SetTimings( uint32_t mask );
 
 uint8_t I2C_GetAddress( void );
 void I2C_SetAddress( uint8_t address );
+
+
+// send the answer to a request that I2C_request_callback_t deferred.
+// returns 0 if sent, 1 if no leader is waiting for it any more
+int I2C_FollowRespond( uint8_t* data, int size );
 
 
 /////////////////////////
