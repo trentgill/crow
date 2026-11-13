@@ -149,7 +149,8 @@ local JALL = {}
 for i = 0, 63 do JALL[#JALL+1] = (i * 0x101 + 0x33) % 0x4000 end
 ii.jf.event = function(e, v)
     if e.name == J.g1 then
-        if v == J.g1want then J.ok = J.ok + 1 else J.bad = J.bad + 1; J.last_bad = e.name .. tostring(v) end
+        if v == J.g1want then J.ok = J.ok + 1 else J.bad = J.bad + 1; J.last_bad = e.name .. tostring(v)
+            J.bads = (J.bads or '') .. ',' .. e.name .. tostring(v) end
         return
     elseif e.name ~= J.g2 then
         J.other = J.other + 1
@@ -162,7 +163,7 @@ ii.jf.event = function(e, v)
     if J.fifo then J.prev = want end
     if want and math.abs(v - want) < 0.0003 then J.ok = J.ok + 1
     elseif prev and math.abs(v - prev) < 0.0003 then J.ok = J.ok + 1; J.late = J.late + 1
-    else J.bad = J.bad + 1; J.last_bad = v end
+    else J.bad = J.bad + 1; J.last_bad = v; J.bads = (J.bads or '') .. ',' .. e.name .. tostring(v) end
 end
 -- crow A works on the speed switch and run; crow B on the mode switch and
 -- transpose, so two leaders never send the same bytes (identical transfers
