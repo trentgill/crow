@@ -46,7 +46,7 @@ ADC_cfg_t adc_cfg = { .mode       = 4
                     , .offset     = 0
                     , .margin     = 4000
                     , .spb        = 32
-                    , .edge       = 1008
+                    , .edge       = 1016 // 8 cycles after the CLKIN edge that samples DRDY: DMA can only be late
                     , .txcmd      = 0
                     };
 ADC_dbg_t adc_dbg;
