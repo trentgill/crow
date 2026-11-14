@@ -24,6 +24,9 @@ typedef struct{
     double   lastt;
     double   pmean, pm2;
     int      pn;
+    // pulse width (rise -> fall)
+    double   wsum;
+    int      wn;
     // amplitude
     float    vmax, vmin;
     FreqM_result_t res;
@@ -32,7 +35,11 @@ typedef struct{
 typedef struct{
     float    prev;
     float    hi, lo;
-    int      armed;
+    int      armed;    // went below mid-h: next mid crossing upward is a rise
+    int      armed_hi; // went above mid+h after a rise: next downward is a fall
+    int      has_rise;
+    uint32_t rise_n;
+    float    rise_frac;
 } Det_t;
 
 static Det_t    det[FREQM_CHANNELS];
@@ -53,6 +60,8 @@ static void acc_reset( Acc_t* a, uint32_t start, uint32_t len )
     a->lastt = 0.0;
     a->pmean = a->pm2 = 0.0;
     a->pn = 0;
+    a->wsum = 0.0;
+    a->wn = 0;
     a->vmax = -40000.0f;
     a->vmin =  40000.0f;
     a->done = 0;
@@ -87,6 +96,7 @@ static void acc_finish( Acc_t* a, int ch )
     r->vpp = (a->vmax > a->vmin)
            ? ADC_RawToVolts(ch, (int16_t)a->vmax) - ADC_RawToVolts(ch, (int16_t)a->vmin)
            : 0.0f;
+    r->width = (a->wn > 0) ? (float)(a->wsum / (double)a->wn / (double)ADC_SAMPLE_RATE) : 0.0f;
     if( a->n < 2 ){
         r->freq = 0.0f; r->jitter = 0.0f; r->resid = 0.0f;
     } else {
@@ -110,6 +120,7 @@ void FreqM_init( void )
 {
     for( int j=0; j<FREQM_CHANNELS; j++ ){
         det[j].prev = 0.0f; det[j].hi = 0.0f; det[j].lo = 0.0f; det[j].armed = 0;
+        det[j].armed_hi = 0; det[j].has_rise = 0;
         shot[j].active = 0; shot[j].done = 0;
         track[j].active = 0; track_len[j] = 0;
         tracked[j] = 0.0f;
@@ -117,7 +128,7 @@ void FreqM_init( void )
     started = 0;
 }
 
-static inline void acc_sample( Acc_t* a, uint32_t n, float x, int crossed, float frac, int ch, int is_track )
+static inline void acc_sample( Acc_t* a, uint32_t n, float x, int crossed, float frac, float width, int ch, int is_track )
 {
     if( !a->active ){ return; }
     if( (int32_t)(n - a->start) < 0 ){ return; }
@@ -135,6 +146,7 @@ static inline void acc_sample( Acc_t* a, uint32_t n, float x, int crossed, float
     if( x > a->vmax ){ a->vmax = x; }
     if( x < a->vmin ){ a->vmin = x; }
     // crossing lies between samples n-1 and n; time relative to window start
+    if( width > 0.0f ){ a->wsum += (double)width; a->wn++; }
     if( crossed ){ acc_cross( a, (double)(int32_t)(n - 1 - a->start) + (double)frac ); }
 }
 
@@ -158,6 +170,7 @@ void FreqM_process( void )
             float mid = 0.5f*(d->hi + d->lo);
             int crossed = 0;
             float frac = 0.0f;
+            float width = 0.0f;
             if( pp > MIN_PP ){
                 float h = HYST_FRAC * pp;
                 if( x < mid - h ){
@@ -166,14 +179,31 @@ void FreqM_process( void )
                     d->armed = 0;
                     float dx = x - d->prev;
                     frac = (dx > 0.0f && d->prev < mid) ? (mid - d->prev)/dx : 1.0f;
+                    d->has_rise = 1;
+                    d->rise_n = n;
+                    d->rise_frac = frac;
+                    d->armed_hi = 0;
                     crossed = 1;
+                }
+                if( d->has_rise ){
+                    if( x > mid + h ){
+                        d->armed_hi = 1;
+                    } else if( d->armed_hi && x < mid ){
+                        float dx = d->prev - x;
+                        float ff = (dx > 0.0f && d->prev >= mid) ? (d->prev - mid)/dx : 1.0f;
+                        width = (float)(int32_t)(n - d->rise_n) + ff - d->rise_frac;
+                        d->has_rise = 0;
+                        d->armed_hi = 0;
+                    }
                 }
             } else {
                 d->armed = 0;
+                d->armed_hi = 0;
+                d->has_rise = 0;
             }
             d->prev = x;
-            acc_sample( &shot[j],  n, x, crossed, frac, j, 0 );
-            acc_sample( &track[j], n, x, crossed, frac, j, 1 );
+            acc_sample( &shot[j],  n, x, crossed, frac, width, j, 0 );
+            acc_sample( &track[j], n, x, crossed, frac, width, j, 1 );
         }
     }
 }

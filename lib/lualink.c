@@ -433,7 +433,7 @@ static int _freqm_start( lua_State *L )
     lua_settop(L, 0);
     return 0;
 }
-// returns nil while busy, else for each channel: freq, count, jitter(cents), vpp, resid
+// returns nil while busy, else for each channel: freq, count, jitter(cents), vpp, width(s)
 static int _freqm_result( lua_State *L )
 {
     lua_settop(L, 0);
@@ -444,7 +444,7 @@ static int _freqm_result( lua_State *L )
         lua_pushinteger(L, r->count);
         lua_pushnumber(L, r->jitter);
         lua_pushnumber(L, r->vpp);
-        lua_pushnumber(L, r->resid);
+        lua_pushnumber(L, r->width);
     }
     return 10;
 }

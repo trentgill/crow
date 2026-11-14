@@ -17,6 +17,7 @@ typedef struct{
     float    jitter;  // std-dev of individual periods, in cents
     float    vpp;     // peak-to-peak volts seen during the window
     float    resid;   // rms residual of the linear fit, in samples
+    float    width;   // mean time from rising to falling mid crossing, seconds
 } FreqM_result_t;
 
 void FreqM_init( void );
