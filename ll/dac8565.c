@@ -6,14 +6,16 @@
 
 #include "adda.h"   // ADDA_BlockProcess()
 #include "wrMath.h" // lim_f()
+#include "../lib/telemetry.h"
 
 #define DAC_BUFFER_COUNT 2 // ping-pong
 
 I2S_HandleTypeDef dac_i2s;
 
-// pointer to the malloc()d buffer from DAC_Init()
-uint32_t  samp_count = 0;
-uint32_t* samples = NULL;
+// the DMA stream reads this continuously, so it must be memory the data cache
+// never holds a newer copy of: a static (DTCM), not the heap
+static uint32_t samples[DAC_BUFFER_COUNT * ADDA_BLOCK_SIZE * ADDA_DAC_CHAN_COUNT];
+uint32_t samp_count = 0;
 
 #define DAC_ZERO_VOLTS      ((uint16_t)(((uint32_t)0xFFFF * 2)/3))
 #define DAC_V_TO_U16        ((float)(65535.0 / 15.0))
@@ -25,9 +27,11 @@ void DAC_Init( uint16_t bsize, uint8_t chan_count )
 {
     // Create the sample buffer for DMA transfer
     samp_count = DAC_BUFFER_COUNT * bsize * chan_count;
-    samples = malloc( sizeof(uint32_t) * samp_count );
+    if( samp_count > sizeof(samples)/sizeof(samples[0]) ){
+        printf("DAC_buffer\n");
+        samp_count = sizeof(samples)/sizeof(samples[0]);
+    }
     for( int i=0; i<samp_count; i++ ){ samples[i] = 0; } // unnecessary
-    if(samples == NULL){ printf("DAC_buffer\n"); }
 
     for( int j=0; j<DAC_CHANNELSS; j++ ){
         dac_calibrated_offset[j] = 0.0;
@@ -155,13 +159,17 @@ void DAC_PickleBlock( uint32_t* dac_pickle_ptr
 void HAL_I2S_TxHalfCpltCallback( I2S_HandleTypeDef *hi2s )
 {
     Debug_Pin_Set(1);
+    uint32_t t = TM_CYCLES();
     ADDA_BlockProcess( samples );
+    Telemetry_dsp( TM_CYCLES() - t );
     Debug_Pin_Set(0);
 }
 void HAL_I2S_TxCpltCallback( I2S_HandleTypeDef *hi2s )
 {
     Debug_Pin_Set(1);
+    uint32_t t = TM_CYCLES();
     ADDA_BlockProcess( &samples[samp_count/2] );
+    Telemetry_dsp( TM_CYCLES() - t );
     Debug_Pin_Set(0);
 }
 void HAL_I2S_ErrorCallback( I2S_HandleTypeDef *hi2s )

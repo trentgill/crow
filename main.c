@@ -18,11 +18,14 @@
 #include "lib/bootloader.h" // bootloader_enter(), bootloader_restart()
 #include "lib/flash.h" // Flash_clear_user_script()
 #include "stm32f7xx_it.h" // CPU_count;
+#include "lib/telemetry.h"
+#include "lib/crashreport.h" // crashreport_init(), crashreport_tick()
 
 
 int main(void)
 {
     system_init();
+    Telemetry_init();
 
     // Debugging
     Debug_Pin_Init();
@@ -33,6 +36,7 @@ int main(void)
     status_led_set(1); // set status to ON to show sign of life straight away
 
     printf("\n\nhi from crow!\n");
+    crashreport_init(); // before REPL_init() which checks crashreport_skip_userscript()
 
     // Drivers
     int max_timers = Timer_Init();
@@ -41,7 +45,7 @@ int main(void)
     events_init();
     Metro_Init( max_timers-2 ); // reserve 2 timers for USB & ADC
     clock_init( 100 ); // TODO how to pass it the timer?
-    Caw_Init( max_timers-1 ); // use last timer
+    Caw_Init();
     CDC_clear_buffers();
 
     i2c_hw_pullups_init(); // enable GPIO for v1.1 hardware pullups
@@ -56,6 +60,7 @@ int main(void)
     uint32_t last_tick = HAL_GetTick();
     while(1){
         CPU_count++;
+        Telemetry_loop();
         U_PrintNow();
         switch( Caw_try_receive() ){ // true on pressing 'enter'
             case C_repl:        REPL_eval( Caw_get_read()
@@ -80,6 +85,7 @@ int main(void)
         if( last_tick != time_now ){ // called on 1ms interval
             last_tick = time_now;
             clock_update(time_now);
+            crashreport_tick(time_now);
             status_led_tick(time_now);
         }
         event_next(); // check/execute single event

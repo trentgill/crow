@@ -45,7 +45,8 @@ static void Sys_Clk_Config(void)
 {
     __HAL_RCC_PWR_CLK_ENABLE();
 
-    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
+    // 216MHz needs scale 1 plus over-drive. scale 2 is only rated to 180MHz
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
     static RCC_OscInitTypeDef osc;
     osc.OscillatorType = RCC_OSCILLATORTYPE_HSE;
@@ -81,18 +82,25 @@ static void MPU_Config(void)
 
     HAL_MPU_Disable();
 
-    // Configure the MPU attributes as WT for SRAM
+    // RAM is ordinary cacheable memory: write-back, write-allocate.
+    //
+    // It must NOT be marked shareable. A cortex-m7 treats shareable memory as
+    // non-cacheable unless told otherwise (CACR.SIWT), so with that bit set the
+    // data cache was enabled but skipped for the whole of SRAM: the lua heap.
+    //
+    // The first 64kB of this region is DTCM, which bypasses the cache whatever
+    // is set here. Every buffer a DMA stream reads or writes lives there (all
+    // statics do: see stm32_flash.ld), so no cache maintenance is needed for them.
+    // A DMA buffer on the heap would need cleaning / invalidating around each transfer.
     mpu.Enable           = MPU_REGION_ENABLE;
-    // mpu.Enable           = MPU_REGION_DISABLE;
-    // mpu.BaseAddress      = 0x20020000;
     mpu.BaseAddress      = 0x20000000;
     mpu.Size             = MPU_REGION_SIZE_256KB;
     mpu.AccessPermission = MPU_REGION_FULL_ACCESS;
-    mpu.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
+    mpu.IsBufferable     = MPU_ACCESS_BUFFERABLE;
     mpu.IsCacheable      = MPU_ACCESS_CACHEABLE;
-    mpu.IsShareable      = MPU_ACCESS_SHAREABLE;
+    mpu.IsShareable      = MPU_ACCESS_NOT_SHAREABLE;
     mpu.Number           = MPU_REGION_NUMBER0;
-    mpu.TypeExtField     = MPU_TEX_LEVEL0;
+    mpu.TypeExtField     = MPU_TEX_LEVEL1;
     mpu.SubRegionDisable = 0x00;
     mpu.DisableExec      = MPU_INSTRUCTION_ACCESS_ENABLE;
     HAL_MPU_ConfigRegion(&mpu);

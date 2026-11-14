@@ -30,7 +30,7 @@ DEFS = -DUSE_STDPERIPH_DRIVER -DSTM32F7XX -DARM_MATH_CM7 -DHSE_VALUE=8000000
 DEFS += -DSTM32F722xx -DUSE_HAL_DRIVER
 STARTUP = $(CUBE)/CMSIS/Device/ST/STM32F7xx/Source/Templates/gcc/startup_stm32f722xx.s
 
-MCFLAGS = -mthumb -march=armv7e-m -mfloat-abi=hard -mfpu=fpv4-sp-d16
+MCFLAGS = -mthumb -mcpu=cortex-m7 -mfloat-abi=hard -mfpu=fpv5-sp-d16
 
 STM32_INCLUDES = \
 	-I$(WRLIB)/ \
@@ -57,11 +57,22 @@ CFLAGS += -fno-common
 CFLAGS += -DVERSION=\"$(GIT_VERSION)\"
 CFLAGS += -ffunction-sections -fdata-sections # provides majority of LTO binary size reduction
 CFLAGS += -DLUA_COMPAT_MATHLIB
+# crow's own lua libraries are bytecode in flash (.rodata). run them from there
+# rather than copying their instructions into the lua heap. the range tells the
+# loader which chunks really are in flash: anything else is copied as usual.
+CFLAGS += -DBYTECODE_IN_FLASH
+CFLAGS += -DBYTECODE_FLASH_START=0x08000000 -DBYTECODE_FLASH_END=0x08080000
 
 # debugger: choose between uart (=0) & swtrace(=1). latter requires hardware mod
 TRACE ?= 0
 ifeq ($(TRACE), 1)
 	CFLAGS += -DTRACE
+endif
+
+# telemetry: sys_telemetry() & the measurement hooks behind tests/hw. (=0) removes them
+TELEMETRY ?= 1
+ifeq ($(TELEMETRY), 1)
+	CFLAGS += -DTELEMETRY
 endif
 
 # release: if (=1), disable all debug prints
@@ -235,8 +246,12 @@ $(BIN): $(EXECUTABLE)
 	@echo "        ^ must be less than 384kB (384,000)"
 	# 512kb -64kb(bootloader) -128kb(scripts)
 
+# with more than one st-link attached, name crow's: make flash CROW_STLINK=<serial>
+# (st-flash otherwise takes the first probe it finds, whatever it is wired to)
+STLINK = $(if $(CROW_STLINK),--serial $(CROW_STLINK))
+
 flash: $(BIN)
-	st-flash write $(BIN) 0x08020000
+	st-flash $(STLINK) write $(BIN) 0x08020000
 
 debug:
 	make flash TRACE=1
@@ -291,13 +306,15 @@ zip: $(BIN) $(TARGET).dfu
 # could be avoided by a more complicated pass in (sed), but this was easier
 # 1. cross-compile all .lua files into .lc bytecode for stm32-arm-cortex-m7 format
 # 2. wrap the .lc binary files into .h headers with auto-generated names
-# 3. add const qualifiers to headers to satisfy C99 struct initializer requirement
+# 3. add const qualifiers to headers: the length for C99 struct initializers, and
+#    the bytecode itself so it is linked into flash instead of being copied to ram
 
 %.lua.h: %.lua $(BUILD_DIR)
 	@echo l2h $< "->" $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua.h,.h,$@)))
 	@$(LUAC_CROSS) -s -o $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua,.lc,$<))) $<
 	@xxd -i $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua,.lc,$<))) $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua.h,.h,$@)))
 	@sed -i 's/unsigned int/const unsigned int/g' $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua.h,.h,$@)))
+	@sed -i 's/^unsigned char/const unsigned char/g' $(addprefix $(BUILD_DIR)/, $(notdir $(subst .lua.h,.h,$@)))
 
 Startup.o: $(STARTUP)
 	@$(CC) $(CFLAGS) -c $< -o $@
@@ -312,7 +329,7 @@ fsk-wav: $(BIN)
 		$(PRJ_DIR)/$(BIN)
 
 erase:
-	st-flash erase
+	st-flash $(STLINK) erase
 
 norns:
 	lua util/ii_norns_actions.lua lua/ii/ $(NORNS_DIR)/lua/core/crow/ii_actions.lua

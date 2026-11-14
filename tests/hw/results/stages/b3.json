@@ -1,0 +1,366 @@
+{
+ "label": "b3",
+ "date": "2026-11-12 14:46:55",
+ "metrics": {
+  "flash_image": {
+   "value": 300176,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "boot_to_usb": {
+   "value": 457.4009620118886,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "ram_static": {
+   "value": 28288,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "lua_heap_at_boot": {
+   "value": 80451,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "heap_claimed": {
+   "value": 106496,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "stack_peak": {
+   "value": 3000,
+   "unit": "bytes",
+   "better": null
+  },
+  "ram_free_for_scripts": {
+   "value": 92288,
+   "unit": "bytes",
+   "better": "higher"
+  },
+  "idle_cpu_busy": {
+   "value": 8.581281,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_dsp_block_avg": {
+   "value": 38.269,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_block_max": {
+   "value": 41.3287,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_load": {
+   "value": 5.607285,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_loop_worst": {
+   "value": 154.1343,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_cpu_busy": {
+   "value": 25.07336,
+   "unit": "%",
+   "better": "lower"
+  },
+  "busy_dsp_block_avg": {
+   "value": 125.0485,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_dsp_block_max": {
+   "value": 162.0926,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_loop_worst": {
+   "value": 433.2268,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_event_queue_peak": {
+   "value": 2,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "busy_lua_loop": {
+   "value": 463.199,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_loop": {
+   "value": 395.922,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_call": {
+   "value": 520.99,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_table": {
+   "value": 119.423,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_string": {
+   "value": 102.562,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_math": {
+   "value": 326.196,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_library": {
+   "value": 916.878,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_median": {
+   "value": 1.9996460032416508,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_p95": {
+   "value": 2.0189429924357682,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "print_20_lines_delivered": {
+   "value": 75.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_300_lines_delivered": {
+   "value": 56.333333333333336,
+   "unit": "%",
+   "better": "higher"
+  },
+  "upload_druid_paced_time": {
+   "value": 807.7259449928533,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_druid_paced_rate": {
+   "value": 19.558614029836296,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_lines_unpaced_time": {
+   "value": 63.938648003386334,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_lines_unpaced_rate": {
+   "value": 247.08060763442015,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_small_burst_time": {
+   "value": 15.977486997144297,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_small_burst_rate": {
+   "value": 185.4484375752949,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "repl_lines_per_second": {
+   "value": 5177.414819695797,
+   "unit": "lines/s",
+   "better": "higher"
+  },
+  "loopback_worst_error": {
+   "value": 52.26900000000079,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "ramp_biggest_step": {
+   "value": 65.99236,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "clock_burst_event_queue_peak": {
+   "value": 39,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "watchdog_empty_loop": {
+   "value": 774.4852949981578,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_c_call_loop": {
+   "value": 2207.2666940221097,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_print_loop": {
+   "value": 4716.4290330256335,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_pcall_loop": {
+   "value": 773.655623983359,
+   "unit": "ms",
+   "better": null
+  },
+  "lua_allocatable": {
+   "value": 84,
+   "unit": "kB",
+   "better": "higher"
+  },
+  "print_script_time": {
+   "value": 140.40186197962612,
+   "unit": "ms",
+   "better": "lower"
+  }
+ },
+ "checks": {
+  "version_reply": {
+   "ok": true,
+   "detail": "[\"^^version('v4.0.5-10-gc90b3da')\"]"
+  },
+  "identity_reply": {
+   "ok": true,
+   "detail": ""
+  },
+  "core_voltage_scale_in_spec": {
+   "ok": true,
+   "detail": "216 MHz at VOS=3"
+  },
+  "bus_clocks_in_spec": {
+   "ok": false,
+   "detail": "APB1 108 MHz, APB2 216 MHz"
+  },
+  "busy_no_events_lost": {
+   "ok": true,
+   "detail": "0 dropped"
+  },
+  "busy_no_tx_dropped": {
+   "ok": true,
+   "detail": "0 bytes"
+  },
+  "latency_all_answered": {
+   "ok": true,
+   "detail": "200 of 200"
+  },
+  "print_20_lines_whole": {
+   "ok": false,
+   "detail": "15 intact of 20, 211 bytes dropped by the device"
+  },
+  "tx_section_completed": {
+   "ok": false,
+   "detail": "KeyError: 'tx_dropped'"
+  },
+  "upload_druid_paced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_lines_unpaced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_burst_intact": {
+   "ok": false,
+   "detail": "ValueError"
+  },
+  "upload_small_burst_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "store_script": {
+   "ok": true,
+   "detail": "1438 ms"
+  },
+  "stored_script_runs_at_boot": {
+   "ok": true,
+   "detail": ""
+  },
+  "print_script_matches": {
+   "ok": true,
+   "detail": "15798 of 15798 bytes"
+  },
+  "clear_script": {
+   "ok": true,
+   "detail": "['^^pub(\"_clear\")']"
+  },
+  "repl_300_writes_all_run": {
+   "ok": true,
+   "detail": "300 of 300"
+  },
+  "repl_100_lines_one_write_all_run": {
+   "ok": true,
+   "detail": "100 of 100"
+  },
+  "repl_multiline_write_is_one_chunk": {
+   "ok": false,
+   "detail": "nil"
+  },
+  "loopback_within_150mV": {
+   "ok": true,
+   "detail": "52 mV"
+  },
+  "ramp_is_smooth": {
+   "ok": true,
+   "detail": "173 samples, 66 mV"
+  },
+  "clock_50_wake_together": {
+   "ok": false,
+   "detail": "each ran 0 to 11 times, 11 events dropped"
+  },
+  "watchdog_empty_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_c_call_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_print_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_pcall_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_clock_coroutine_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_kill_not_swallowed_by_pcall": {
+   "ok": true,
+   "detail": "_w=nil"
+  },
+  "out_of_memory_survived": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_bus_fault_recovers": {
+   "ok": false,
+   "detail": "no answer until reset by hand"
+  },
+  "fault_undefined_instruction_recovers": {
+   "ok": false,
+   "detail": "no answer until reset by hand"
+  },
+  "fault_lua_panic_recovers": {
+   "ok": false,
+   "detail": "no answer until reset by hand"
+  },
+  "fault_stack_overflow_recovers": {
+   "ok": false,
+   "detail": "no answer until reset by hand"
+  }
+ },
+ "flashed": "/tmp/claude-1000/-home-trent-d-gazette--claude-worktrees-bridge-cse-01NBXuVPxCk7EF5eZAhuPaZu/859f2986-4ace-5eb4-b417-34e1d65249d8/scratchpad/crow-b3.bin",
+ "version": "No user script."
+}

@@ -1,0 +1,370 @@
+{
+ "label": "b1b4",
+ "date": "2026-11-12 14:20:03",
+ "metrics": {
+  "flash_image": {
+   "value": 300064,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "boot_to_usb": {
+   "value": 461.11961602582596,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "ram_static": {
+   "value": 69584,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "lua_heap_at_boot": {
+   "value": 95764,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "heap_claimed": {
+   "value": 122928,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "stack_peak": {
+   "value": 2896,
+   "unit": "bytes",
+   "better": null
+  },
+  "ram_free_for_scripts": {
+   "value": 68544,
+   "unit": "bytes",
+   "better": "higher"
+  },
+  "idle_cpu_busy": {
+   "value": 14.50812,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_dsp_block_avg": {
+   "value": 66.29102,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_block_max": {
+   "value": 68.68519,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_load": {
+   "value": 9.713949,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_loop_worst": {
+   "value": 309.4028,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_cpu_busy": {
+   "value": 35.48435,
+   "unit": "%",
+   "better": "lower"
+  },
+  "busy_dsp_block_avg": {
+   "value": 184.1642,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_dsp_block_max": {
+   "value": 227.3148,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_loop_worst": {
+   "value": 1237.009,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_event_queue_peak": {
+   "value": 2,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "busy_lua_loop": {
+   "value": 578.702,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_loop": {
+   "value": 466.734,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_call": {
+   "value": 583.739,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_table": {
+   "value": 140.347,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_string": {
+   "value": 125.379,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_math": {
+   "value": 398.288,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_library": {
+   "value": 1069.073,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_median": {
+   "value": 1.9999385112896562,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_p95": {
+   "value": 2.033886994468048,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "print_20_lines_delivered": {
+   "value": 100.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_300_lines_delivered": {
+   "value": 71.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_throughput": {
+   "value": 438.5842862017828,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_druid_paced_time": {
+   "value": 821.6502020077314,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_druid_paced_rate": {
+   "value": 19.227160124097853,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_lines_unpaced_time": {
+   "value": 79.94656398659572,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_lines_unpaced_rate": {
+   "value": 197.60699162316445,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_small_burst_time": {
+   "value": 20.98294100142084,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_small_burst_rate": {
+   "value": 141.20994763314462,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "print_script_time": {
+   "value": 140.4341740126256,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_lines_per_second": {
+   "value": 3949.0663119587375,
+   "unit": "lines/s",
+   "better": "higher"
+  },
+  "loopback_worst_error": {
+   "value": 48.52499999999971,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "ramp_biggest_step": {
+   "value": 65.52434,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "clock_burst_event_queue_peak": {
+   "value": 39,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "watchdog_empty_loop": {
+   "value": 823.6312060034834,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_c_call_loop": {
+   "value": 2759.027910011355,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_print_loop": {
+   "value": 5770.1971429924015,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_pcall_loop": {
+   "value": 823.6348399950657,
+   "unit": "ms",
+   "better": null
+  },
+  "lua_allocatable": {
+   "value": 61,
+   "unit": "kB",
+   "better": "higher"
+  }
+ },
+ "checks": {
+  "version_reply": {
+   "ok": true,
+   "detail": "[\"^^version('v4.0.5-8-gdda49c5')\"]"
+  },
+  "identity_reply": {
+   "ok": true,
+   "detail": ""
+  },
+  "core_voltage_scale_in_spec": {
+   "ok": true,
+   "detail": "216 MHz at VOS=3"
+  },
+  "bus_clocks_in_spec": {
+   "ok": false,
+   "detail": "APB1 108 MHz, APB2 216 MHz"
+  },
+  "busy_no_events_lost": {
+   "ok": true,
+   "detail": "0 dropped"
+  },
+  "busy_no_tx_dropped": {
+   "ok": true,
+   "detail": "0 bytes"
+  },
+  "latency_all_answered": {
+   "ok": true,
+   "detail": "200 of 200"
+  },
+  "print_20_lines_whole": {
+   "ok": true,
+   "detail": "20 intact of 20, 0 bytes dropped by the device"
+  },
+  "print_300_lines_whole": {
+   "ok": false,
+   "detail": "213 intact of 300, 4401 bytes dropped by the device"
+  },
+  "upload_druid_paced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_lines_unpaced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_burst_intact": {
+   "ok": false,
+   "detail": "ValueError"
+  },
+  "upload_small_burst_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "store_script": {
+   "ok": true,
+   "detail": "1472 ms"
+  },
+  "stored_script_runs_at_boot": {
+   "ok": false,
+   "detail": "crow said ['not enough memory', 'failed to load user script']"
+  },
+  "print_script_matches": {
+   "ok": true,
+   "detail": "15798 of 15798 bytes"
+  },
+  "clear_script": {
+   "ok": true,
+   "detail": "['^^pub(\"_clear\")']"
+  },
+  "repl_300_writes_all_run": {
+   "ok": true,
+   "detail": "300 of 300"
+  },
+  "repl_100_lines_one_write_all_run": {
+   "ok": true,
+   "detail": "100 of 100"
+  },
+  "repl_multiline_write_is_one_chunk": {
+   "ok": false,
+   "detail": "nil"
+  },
+  "loopback_within_150mV": {
+   "ok": true,
+   "detail": "49 mV"
+  },
+  "ramp_is_smooth": {
+   "ok": true,
+   "detail": "173 samples, 66 mV"
+  },
+  "clock_50_wake_together": {
+   "ok": false,
+   "detail": "each ran 0 to 11 times, 11 events dropped"
+  },
+  "watchdog_empty_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_c_call_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_print_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_pcall_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_clock_coroutine_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_kill_not_swallowed_by_pcall": {
+   "ok": true,
+   "detail": "_w=nil"
+  },
+  "out_of_memory_survived": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_bus_fault_recovers": {
+   "ok": false,
+   "detail": "no crash report"
+  },
+  "fault_undefined_instruction_recovers": {
+   "ok": false,
+   "detail": "no crash report"
+  },
+  "fault_lua_panic_recovers": {
+   "ok": false,
+   "detail": "no crash report"
+  },
+  "fault_stack_overflow_recovers": {
+   "ok": false,
+   "detail": "no crash report"
+  }
+ },
+ "version": "^^version('v4.0.5-8-gdda49c5')"
+}

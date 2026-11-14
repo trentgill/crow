@@ -1,6 +1,7 @@
 #include "flash.h"
 
 #include <stdio.h>
+#include <string.h> // memcpy()
 #include "../ll/debug_usart.h"
 
 #define USER_MAGIC 0xA  // bit pattern
@@ -186,15 +187,8 @@ uint8_t Flash_read_calibration( uint8_t* data, uint32_t length )
 {
     if( !Flash_is_calibrated() ){ return 1; } // no calibration
 
-    uint16_t word_length = length >> 2;
-    word_length++;
-
-    uint32_t sd_addr = CALIBRATION_LOCATION + 4; // skip status word
-    uint32_t* word_buffer = (uint32_t*)data;
-    while( word_length-- ){
-        *word_buffer++ = (*(__IO uint32_t*)sd_addr);
-        sd_addr += 4;
-    }
+    // exactly length bytes: rounding up to whole words overruns the caller's buffer
+    memcpy( data, (void*)(CALIBRATION_LOCATION + 4), length ); // skip status word
     return 0;
 }
 

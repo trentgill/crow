@@ -1,0 +1,371 @@
+{
+ "label": "b2",
+ "date": "2026-11-12 14:47:47",
+ "metrics": {
+  "flash_image": {
+   "value": 300168,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "boot_to_usb": {
+   "value": 466.96212398819625,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "ram_static": {
+   "value": 29304,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "lua_heap_at_boot": {
+   "value": 80403,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "heap_claimed": {
+   "value": 106496,
+   "unit": "bytes",
+   "better": "lower"
+  },
+  "stack_peak": {
+   "value": 2736,
+   "unit": "bytes",
+   "better": null
+  },
+  "ram_free_for_scripts": {
+   "value": 93440,
+   "unit": "bytes",
+   "better": "higher"
+  },
+  "idle_cpu_busy": {
+   "value": 7.917333,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_dsp_block_avg": {
+   "value": 34.00321,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_block_max": {
+   "value": 36.64352,
+   "unit": "us",
+   "better": "lower"
+  },
+  "idle_dsp_load": {
+   "value": 4.982115,
+   "unit": "%",
+   "better": "lower"
+  },
+  "idle_loop_worst": {
+   "value": 185.0648,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_cpu_busy": {
+   "value": 23.76154,
+   "unit": "%",
+   "better": "lower"
+  },
+  "busy_dsp_block_avg": {
+   "value": 118.7096,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_dsp_block_max": {
+   "value": 148.4167,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_loop_worst": {
+   "value": 297.662,
+   "unit": "us",
+   "better": "lower"
+  },
+  "busy_event_queue_peak": {
+   "value": 3,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "busy_lua_loop": {
+   "value": 241.993,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_loop": {
+   "value": 209.063,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_call": {
+   "value": 263.166,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_table": {
+   "value": 58.137,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_string": {
+   "value": 78.63,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_math": {
+   "value": 199.724,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "lua_library": {
+   "value": 542.338,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_median": {
+   "value": 1.9995460024802014,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "repl_roundtrip_p95": {
+   "value": 2.031615993473679,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "print_20_lines_delivered": {
+   "value": 75.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_300_lines_delivered": {
+   "value": 47.0,
+   "unit": "%",
+   "better": "higher"
+  },
+  "print_throughput": {
+   "value": 404.2181319339279,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_druid_paced_time": {
+   "value": 801.6849030100275,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_druid_paced_rate": {
+   "value": 19.70599663369537,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_lines_unpaced_time": {
+   "value": 55.92978201457299,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_lines_unpaced_rate": {
+   "value": 282.4613190139682,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "upload_small_burst_time": {
+   "value": 13.96001601824537,
+   "unit": "ms",
+   "better": "lower"
+  },
+  "upload_small_burst_rate": {
+   "value": 212.2490401248421,
+   "unit": "kB/s",
+   "better": "higher"
+  },
+  "repl_lines_per_second": {
+   "value": 6029.040563307165,
+   "unit": "lines/s",
+   "better": "higher"
+  },
+  "loopback_worst_error": {
+   "value": 50.86499999999994,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "ramp_biggest_step": {
+   "value": 64.82196,
+   "unit": "mV",
+   "better": "lower"
+  },
+  "clock_burst_event_queue_peak": {
+   "value": 39,
+   "unit": "of 40",
+   "better": "lower"
+  },
+  "watchdog_empty_loop": {
+   "value": 402.4888259882573,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_c_call_loop": {
+   "value": 1291.5241149894428,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_print_loop": {
+   "value": 3516.871275001904,
+   "unit": "ms",
+   "better": null
+  },
+  "watchdog_pcall_loop": {
+   "value": 401.634534006007,
+   "unit": "ms",
+   "better": null
+  },
+  "lua_allocatable": {
+   "value": 85,
+   "unit": "kB",
+   "better": "higher"
+  },
+  "print_script_time": {
+   "value": 120.25591300334781,
+   "unit": "ms",
+   "better": "lower"
+  }
+ },
+ "checks": {
+  "version_reply": {
+   "ok": true,
+   "detail": "[\"^^version('v4.0.5-12-gcccebae')\"]"
+  },
+  "identity_reply": {
+   "ok": true,
+   "detail": ""
+  },
+  "core_voltage_scale_in_spec": {
+   "ok": true,
+   "detail": "216 MHz at VOS=3"
+  },
+  "bus_clocks_in_spec": {
+   "ok": false,
+   "detail": "APB1 108 MHz, APB2 216 MHz"
+  },
+  "busy_no_events_lost": {
+   "ok": true,
+   "detail": "0 dropped"
+  },
+  "busy_no_tx_dropped": {
+   "ok": true,
+   "detail": "0 bytes"
+  },
+  "latency_all_answered": {
+   "ok": true,
+   "detail": "200 of 200"
+  },
+  "print_20_lines_whole": {
+   "ok": false,
+   "detail": "15 intact of 20, 276 bytes dropped by the device"
+  },
+  "print_300_lines_whole": {
+   "ok": false,
+   "detail": "141 intact of 300, 9260 bytes dropped by the device"
+  },
+  "upload_druid_paced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_lines_unpaced_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "upload_burst_intact": {
+   "ok": false,
+   "detail": "ValueError"
+  },
+  "upload_small_burst_intact": {
+   "ok": true,
+   "detail": ""
+  },
+  "store_script": {
+   "ok": true,
+   "detail": "1442 ms"
+  },
+  "stored_script_runs_at_boot": {
+   "ok": true,
+   "detail": ""
+  },
+  "print_script_matches": {
+   "ok": true,
+   "detail": "15798 of 15798 bytes"
+  },
+  "clear_script": {
+   "ok": true,
+   "detail": "['^^pub(\"_clear\")']"
+  },
+  "repl_300_writes_all_run": {
+   "ok": true,
+   "detail": "300 of 300"
+  },
+  "repl_100_lines_one_write_all_run": {
+   "ok": true,
+   "detail": "100 of 100"
+  },
+  "repl_multiline_write_is_one_chunk": {
+   "ok": false,
+   "detail": "nil"
+  },
+  "loopback_within_150mV": {
+   "ok": true,
+   "detail": "51 mV"
+  },
+  "ramp_is_smooth": {
+   "ok": true,
+   "detail": "173 samples, 65 mV"
+  },
+  "clock_50_wake_together": {
+   "ok": false,
+   "detail": "each ran 0 to 10 times, 11 events dropped"
+  },
+  "watchdog_empty_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_c_call_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_print_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_pcall_loop_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_clock_coroutine_recovers": {
+   "ok": true,
+   "detail": "killed"
+  },
+  "watchdog_kill_not_swallowed_by_pcall": {
+   "ok": true,
+   "detail": "_w=nil"
+  },
+  "out_of_memory_survived": {
+   "ok": true,
+   "detail": ""
+  },
+  "fault_bus_fault_recovers": {
+   "ok": false,
+   "detail": "no answer until reset by hand"
+  },
+  "fault_undefined_instruction_recovers": {
+   "ok": false,
+   "detail": "no answer until reset by hand"
+  },
+  "fault_lua_panic_recovers": {
+   "ok": false,
+   "detail": "no answer until reset by hand"
+  },
+  "fault_stack_overflow_recovers": {
+   "ok": false,
+   "detail": "no answer until reset by hand"
+  }
+ },
+ "flashed": "/tmp/claude-1000/-home-trent-d-gazette--claude-worktrees-bridge-cse-01NBXuVPxCk7EF5eZAhuPaZu/859f2986-4ace-5eb4-b417-34e1d65249d8/scratchpad/crow-b2.bin",
+ "version": "No user script."
+}

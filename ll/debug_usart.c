@@ -110,10 +110,11 @@ void U_PrintNow( void )
      && !str_buffer_empty( str_buf ) ){
         BLOCK_IRQS(
             uint16_t str_len = str_buffer_len( str_buf );
-            HAL_USART_Transmit_DMA( &handusart
-                                  , (uint8_t*)str_buffer_dequeue( str_buf, str_len )
-                                  , str_len
-                                  );
+            uint8_t* str = (uint8_t*)str_buffer_dequeue( str_buf, str_len );
+            // the fifo is on the heap, which is cached: push it out to RAM for the DMA
+            uint32_t line = (uint32_t)str & ~31u;
+            SCB_CleanDCache_by_Addr( (uint32_t*)line, (int32_t)((uint32_t)str + str_len - line) );
+            HAL_USART_Transmit_DMA( &handusart, str, str_len );
         );
     }
 #endif // TRACE
