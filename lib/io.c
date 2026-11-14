@@ -10,6 +10,7 @@
 #include "metro.h"
 #include "caw.h"
 #include "casl.h"
+#include "freqm.h"
 
 #include "lualink.h"           // L_handle_in_stream (pass this in as ptr?)
 
@@ -24,6 +25,7 @@ void IO_Init( int adc_timer_ix )
 
     // dsp objects
     Detect_init( IN_CHANNELS );
+    FreqM_init();
     for(int i=0; i<SLOPE_CHANNELS; i++){
         casl_init(i);
     }
@@ -39,6 +41,7 @@ void IO_Start( void )
 // DSP process
 IO_block_t* IO_BlockProcess( IO_block_t* b )
 {
+    FreqM_process(); // consume new frames from the continuous ADC ring
     for( int j=0; j<IN_CHANNELS; j++ ){
         Detect_t* d = Detect_ix_to_p(j);
         (*d->modefn)( d, b->in[j][b->size-1] );

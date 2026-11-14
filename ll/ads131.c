@@ -45,6 +45,15 @@ static void ADC_UnpickleBlock_Cont( int unused );
 
 #define ADC_U16_TO_V        ((float)(15.0 / 65535.0))
 
+// continuous (audio-rate) acquisition, see ADC_Cont_* below
+static void ADC_Cont_Start( void );
+volatile int16_t  adc_ring[ADC_COUNTT][ADC_RING_LEN];
+volatile uint32_t adc_widx = 0; // total frames written (wraps)
+volatile uint32_t adc_frames_resync = 0;
+volatile uint32_t adc_frames_badstat = 0;
+volatile uint32_t adc_frames_overrun = 0;
+static volatile int adc_cont_running = 0;
+
 void ADC_Init( uint16_t bsize, uint8_t chan_count, int timer_ix )
 {
     adc_count  = chan_count;
@@ -74,7 +83,7 @@ void ADC_Init( uint16_t bsize, uint8_t chan_count, int timer_ix )
     
 
     //uint32_t prescaler = (uint32_t)((SystemCoreClock / 10000)-1);
-    uint32_t period_value = 27-1; // 8MHz
+    uint32_t period_value = ADC_MCLK_DIV-1; // 216MHz/18 = 12MHz MCLK
     adc_tim.Instance = TIMa;
     adc_tim.Init.Period = period_value;
     // adc_tim.Init.Prescaler = 3; //prescaler;
@@ -119,6 +128,7 @@ void ADC_Init( uint16_t bsize, uint8_t chan_count, int timer_ix )
     Timer_Priority( timer_index_ads, ADC_IRQPriority );
 
     ADS_Init_Sequence();
+    ADC_Cont_Start();
 }
 
 void ADS_Init_Sequence(void)
@@ -138,7 +148,9 @@ void ADS_Init_Sequence(void)
 
 // weirdly, we choose the OSR value by increasing the multiplier until the DRDY error flag is set
     // we actualy *want* this error flag set, bc it infers the filter has settled
-    ADS_Reg(ADS_WRITE_REG | ADS_CLK2, 0x28); // fMOD = fICLK/2, OSR = 256
+    // continuous mode: MCLK 12MHz -> fICLK 6MHz -> fMOD 3MHz -> OSR 64 -> 46875Hz
+    // (= 216MHz / 4608, phase locked to the TIM8 frame clock below)
+    ADS_Reg(ADS_WRITE_REG | ADS_CLK2, 0x2D); // fMOD = fICLK/2, OSR = 64
     // ADS_Reg(ADS_WRITE_REG | ADS_CLK2, 0x2a); // fMOD = fICLK/2, OSR = 192
     // 0x2* sets clockdiv to /2 (the least divisions, for slowest MCLK)
     // 0x*b was lowest (ie most oversampling) where -5v actually reached 0x8000
@@ -211,27 +223,23 @@ void ADC_UnpickleBlock( float*   unpickled
                       , uint16_t bsize
                       )
 {
+    // copy the most recent bsize frames from the continuous ring
+    uint32_t w = adc_widx;
     float* unpick = unpickled;
-    // Return current buf
     for( uint8_t j=0; j<adc_count; j++ ){
-        // cast to signed -> cast to float -> scale -> shift
-        float once = ((float)((int16_t*)aRxBuffer)[j+1]) // +1 past status byte
-                        * adc_calibrated_scalar[j]
-                        + adc_calibrated_shift[j];
+        float sc = adc_calibrated_scalar[j];
+        float sh = adc_calibrated_shift[j];
+        uint32_t r = w - bsize;
         for( uint16_t i=0; i<bsize; i++ ){
-            *unpick++ = once; // copy single value into whole block
+            *unpick++ = (float)adc_ring[j][(r+i) & ADC_RING_MASK] * sc + sh;
         }
-        last[j] = once;
+        last[j] = unpick[-1];
     }
+}
 
-    // Request next buffer
-    if (HAL_SPI_GetState(&adc_spi) == HAL_SPI_STATE_READY){
-        HAL_GPIO_WritePin( SPIa_NSS_GPIO_PORT, SPIa_NSS_PIN, 0 );
-        // Use the timer to delay continuation while ADC collects data
-        Timer_Start( timer_index_ads, &ADC_UnpickleBlock_Cont );
-    } else {
-        printf("!ADC driver busy\n");
-    }
+float ADC_RawToVolts( uint8_t channel, int16_t raw )
+{
+    return (float)raw * adc_calibrated_scalar[channel] + adc_calibrated_shift[channel];
 }
 
 static void ADC_UnpickleBlock_Cont( int unused )
@@ -505,13 +513,166 @@ void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef *htim)
     HAL_GPIO_DeInit(TIMa_MCLK_GPIO_PORT, TIMa_MCLK_PIN);
 }
 
+static void ADC_Cont_FrameDone( void );
 void SPIa_DMA_RX_IRQHandler(void)
 {
+    if( adc_cont_running ){ ADC_Cont_FrameDone(); return; }
     HAL_DMA_IRQHandler(adc_spi.hdmarx);
 }
 void SPIa_DMA_TX_IRQHandler(void)
 {
+    if( adc_cont_running ){ // shouldn't fire (no TX interrupts enabled). clear all
+        DMA2->LIFCR = 0x0F400000; // stream3 flags
+        return;
+    }
     HAL_DMA_IRQHandler(adc_spi.hdmatx);
+}
+
+
+//////////////////////////////////////////////////////////
+// Continuous acquisition
+//
+// The ADS131A02 runs in synchronous-slave mode with DRDY tied to !CS. It
+// expects a DRDY/!CS falling edge exactly once per data period (or a multiple
+// of it), latched on its CLKIN (MCLK) edge with 10ns setup/hold. Any other
+// edge flags F_RESYNC and resets the sinc3 filter.
+//
+// So the falling edge is generated in hardware: TIM8 (216MHz, period 4608 =
+// one data period = 256 MCLK cycles of TIM2) raises a DMA request on update,
+// and DMA2 Stream1 writes GPIOA->BSRR to pull PA4 (!CS) low. No interrupt
+// latency is involved in the edge timing.
+//
+// TIM8 CC1 (a few hundred ns later) interrupts and starts the 3-word SPI frame
+// by enabling the pre-configured SPI DMA streams. The RX-complete interrupt
+// raises !CS, checks the status word and pushes both channels into adc_ring.
+
+static volatile uint32_t cs_low_word  = (uint32_t)SPIa_NSS_PIN << 16; // BSRR reset
+static volatile uint16_t cont_tx[ADC_FRAMES] = {0,0,0};
+static volatile uint16_t cont_rx[ADC_FRAMES];
+static volatile int      cont_busy = 0;
+
+#define DMA_S0_FLAGS  0x0000003D // LIFCR stream0: TCIF|HTIF|TEIF|DMEIF|FEIF
+#define DMA_S3_FLAGS  0x0F400000 // LIFCR stream3
+#define DMA_S1_FLAGS  0x00000F40 // LIFCR stream1
+
+static void ADC_Cont_Start( void )
+{
+    // faster SPI for audio-rate frames: 108MHz/8 = 13.5MHz (ADS max 25MHz)
+    adc_spi.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+    HAL_SPI_Init(&adc_spi);
+
+    SPI_TypeDef* spi = adc_spi.Instance;
+    // flush any stale rx data
+    while( spi->SR & SPI_SR_RXNE ){ (void)*(volatile uint16_t*)&spi->DR; }
+    (void)spi->SR;
+
+    DMA_Stream_TypeDef* rx = SPIa_RX_DMA_STREAM;
+    DMA_Stream_TypeDef* tx = SPIa_TX_DMA_STREAM;
+    rx->CR &= ~DMA_SxCR_EN; while( rx->CR & DMA_SxCR_EN ){}
+    tx->CR &= ~DMA_SxCR_EN; while( tx->CR & DMA_SxCR_EN ){}
+    DMA2->LIFCR = DMA_S0_FLAGS | DMA_S3_FLAGS;
+    rx->PAR  = (uint32_t)&spi->DR;
+    rx->M0AR = (uint32_t)cont_rx;
+    rx->CR  &= ~(DMA_SxCR_HTIE | DMA_SxCR_TEIE | DMA_SxCR_DMEIE | DMA_SxCR_CIRC);
+    rx->CR  |= DMA_SxCR_TCIE;
+    rx->FCR &= ~DMA_SxFCR_FEIE;
+    tx->PAR  = (uint32_t)&spi->DR;
+    tx->M0AR = (uint32_t)cont_tx;
+    tx->CR  &= ~(DMA_SxCR_HTIE | DMA_SxCR_TEIE | DMA_SxCR_DMEIE | DMA_SxCR_TCIE | DMA_SxCR_CIRC);
+    tx->FCR &= ~DMA_SxFCR_FEIE;
+    spi->CR2 |= SPI_CR2_RXDMAEN;
+    spi->CR2 |= SPI_CR2_TXDMAEN;
+    spi->CR1 |= SPI_CR1_SPE;
+
+    HAL_GPIO_WritePin( SPIa_NSS_GPIO_PORT, SPIa_NSS_PIN, 1 ); // !CS high
+
+    // DMA2 Stream1 ch7 = TIM8_UP : write BSRR to pull !CS low
+    __HAL_RCC_DMA2_CLK_ENABLE();
+    DMA_Stream_TypeDef* cs = DMA2_Stream1;
+    cs->CR = 0; while( cs->CR & DMA_SxCR_EN ){}
+    DMA2->LIFCR = DMA_S1_FLAGS;
+    cs->PAR  = (uint32_t)&(SPIa_NSS_GPIO_PORT->BSRR);
+    cs->M0AR = (uint32_t)&cs_low_word;
+    cs->NDTR = 1;
+    cs->FCR  = 0; // direct mode
+    cs->CR   = (7u << DMA_SxCR_CHSEL_Pos)
+             | DMA_SxCR_PL_1                  // high priority
+             | DMA_SxCR_MSIZE_1 | DMA_SxCR_PSIZE_1 // 32bit
+             | DMA_SxCR_CIRC
+             | DMA_SxCR_DIR_0;                // memory -> peripheral
+    cs->CR  |= DMA_SxCR_EN;
+
+    // TIM8: frame clock at 216MHz/4608 = 46875Hz
+    __HAL_RCC_TIM8_CLK_ENABLE();
+    TIM8->CR1  = 0;
+    TIM8->PSC  = 0;
+    TIM8->ARR  = ADC_FRAME_TICKS - 1;
+    TIM8->CCR1 = 64; // ~300ns after !CS falls, start the SPI frame
+    TIM8->CCMR1 = 0; // frozen output compare (internal only)
+    TIM8->DIER = TIM_DIER_UDE | TIM_DIER_CC1IE;
+    TIM8->EGR  = TIM_EGR_UG;
+    TIM8->SR   = 0;
+
+    HAL_NVIC_SetPriority( TIM8_CC_IRQn, ADC_IRQPriority, 0 );
+    HAL_NVIC_EnableIRQ( TIM8_CC_IRQn );
+
+    adc_cont_running = 1;
+    TIM8->CR1 |= TIM_CR1_CEN;
+}
+
+void TIM8_CC_IRQHandler( void )
+{
+    TIM8->SR = ~TIM_SR_CC1IF;
+    if( cont_busy ){ adc_frames_overrun++; return; }
+    cont_busy = 1;
+    DMA_Stream_TypeDef* rx = SPIa_RX_DMA_STREAM;
+    DMA_Stream_TypeDef* tx = SPIa_TX_DMA_STREAM;
+    DMA2->LIFCR = DMA_S0_FLAGS | DMA_S3_FLAGS;
+    rx->NDTR = ADC_FRAMES;
+    tx->NDTR = ADC_FRAMES;
+    rx->CR |= DMA_SxCR_EN;
+    tx->CR |= DMA_SxCR_EN;
+}
+
+static void ADC_Cont_FrameDone( void )
+{
+    DMA2->LIFCR = DMA_S0_FLAGS | DMA_S3_FLAGS;
+    // wait for the final SCLK to finish before releasing !CS
+    SPI_TypeDef* spi = adc_spi.Instance;
+    while( spi->SR & SPI_SR_BSY ){}
+    SPIa_NSS_GPIO_PORT->BSRR = SPIa_NSS_PIN; // !CS high
+    SPIa_TX_DMA_STREAM->CR &= ~DMA_SxCR_EN;
+
+    uint16_t st = cont_rx[0];
+    if( (st & 0xFF00) != 0x2200 ){
+        adc_frames_badstat++;
+    } else if( st & 0x0004 ){ // F_RESYNC
+        adc_frames_resync++;
+    }
+    uint32_t w = adc_widx & ADC_RING_MASK;
+    adc_ring[0][w] = (int16_t)cont_rx[1];
+    adc_ring[1][w] = (int16_t)cont_rx[2];
+    adc_widx++;
+    cont_busy = 0;
+}
+
+void ADC_GetStats( uint32_t* frames, uint32_t* resync, uint32_t* badstat, uint32_t* overrun, uint16_t* status )
+{
+    *frames  = adc_widx;
+    *resync  = adc_frames_resync;
+    *badstat = adc_frames_badstat;
+    *overrun = adc_frames_overrun;
+    *status  = cont_rx[0];
+}
+
+void ADC_ShiftPhase( int ticks )
+{
+    // nudge the frame clock phase relative to MCLK (for experiments)
+    BLOCK_IRQS(
+        int c = (int)TIM8->CNT + ticks;
+        while( c < 0 ){ c += ADC_FRAME_TICKS; }
+        TIM8->CNT = (uint32_t)(c % ADC_FRAME_TICKS);
+    );
 }
 void SPIa_IRQHandler(void)
 {

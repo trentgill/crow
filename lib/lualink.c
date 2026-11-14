@@ -1,3 +1,5 @@
+#include "freqm.h"
+#include "../ll/ads131.h"
 #include "lib/lualink.h"
 
 #include <stdio.h>
@@ -424,6 +426,63 @@ static int _set_input_freq( lua_State *L )
     lua_settop(L, 0);
     return 0;
 }
+// harness: one-shot frequency window on both inputs
+static int _freqm_start( lua_State *L )
+{
+    FreqM_start( luaL_checknumber(L, 1) );
+    lua_settop(L, 0);
+    return 0;
+}
+// returns nil while busy, else for each channel: freq, count, jitter(cents), vpp, resid
+static int _freqm_result( lua_State *L )
+{
+    lua_settop(L, 0);
+    if( !FreqM_ready() ){ lua_pushnil(L); return 1; }
+    for( int j=0; j<2; j++ ){
+        const FreqM_result_t* r = FreqM_result(j);
+        lua_pushnumber(L, r->freq);
+        lua_pushinteger(L, r->count);
+        lua_pushnumber(L, r->jitter);
+        lua_pushnumber(L, r->vpp);
+        lua_pushnumber(L, r->resid);
+    }
+    return 10;
+}
+// diagnostics for the continuous ADC: frames, resyncs, bad status, overruns, last status
+static int _adc_stats( lua_State *L )
+{
+    uint32_t f, rs, bs, ov; uint16_t st;
+    ADC_GetStats( &f, &rs, &bs, &ov, &st );
+    lua_settop(L, 0);
+    lua_pushinteger(L, (lua_Integer)f);
+    lua_pushinteger(L, (lua_Integer)rs);
+    lua_pushinteger(L, (lua_Integer)bs);
+    lua_pushinteger(L, (lua_Integer)ov);
+    lua_pushinteger(L, (lua_Integer)st);
+    return 5;
+}
+static int _adc_phase( lua_State *L )
+{
+    ADC_ShiftPhase( luaL_checkinteger(L, 1) );
+    lua_settop(L, 0);
+    return 0;
+}
+// raw recent samples (volts) from the ring, for debugging: adc_peek(ch, n)
+static int _adc_peek( lua_State *L )
+{
+    int ch = luaL_checkinteger(L, 1) - 1;
+    int n  = luaL_checkinteger(L, 2);
+    if( n > 64 ){ n = 64; }
+    if( n < 1 ){ n = 1; }
+    lua_settop(L, 0);
+    uint32_t w = adc_widx;
+    lua_createtable(L, n, 0);
+    for( int i=0; i<n; i++ ){
+        lua_pushnumber(L, ADC_RawToVolts(ch&1, adc_ring[ch&1][(w - n + i) & ADC_RING_MASK]));
+        lua_rawseti(L, -2, i+1);
+    }
+    return 1;
+}
 static int _set_input_clock( lua_State *L )
 {
     uint8_t ix = luaL_checkinteger(L, 1)-1;
@@ -838,6 +897,11 @@ static const struct luaL_Reg libCrow[]=
     , { "set_input_peak"   , _set_input_peak   }
     , { "set_input_freq"   , _set_input_freq   }
     , { "set_input_clock"  , _set_input_clock  }
+    , { "freqm_start"      , _freqm_start      }
+    , { "freqm_result"     , _freqm_result     }
+    , { "adc_stats"        , _adc_stats        }
+    , { "adc_phase"        , _adc_phase        }
+    , { "adc_peek"         , _adc_peek         }
         // casl
     , { "casl_describe"    , _casl_describe    }
     , { "casl_action"      , _casl_action      }

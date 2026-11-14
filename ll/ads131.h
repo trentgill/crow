@@ -98,6 +98,18 @@
 
 #define ADS_DATAWORDSIZE 0x2 // 16bit, pin M1 floats
 
+// continuous acquisition
+#define ADC_MCLK_DIV     18     // TIM2: 216MHz / 18 = 12MHz MCLK
+#define ADC_FRAME_TICKS  4608   // TIM8: 216MHz / 4608 = 46875Hz frames
+#define ADC_SAMPLE_RATE  46875.0f
+#define ADC_RING_LEN     2048   // ~44ms per channel
+#define ADC_RING_MASK    (ADC_RING_LEN-1)
+extern volatile int16_t  adc_ring[2][ADC_RING_LEN];
+extern volatile uint32_t adc_widx;
+float ADC_RawToVolts( uint8_t channel, int16_t raw );
+void ADC_GetStats( uint32_t* frames, uint32_t* resync, uint32_t* badstat, uint32_t* overrun, uint16_t* status );
+void ADC_ShiftPhase( int ticks );
+
 void ADC_Init( uint16_t bsize, uint8_t chan_count, int timer_ix );
 
 //int32_t

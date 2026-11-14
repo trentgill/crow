@@ -1,4 +1,6 @@
 #include "detect.h"
+#include "freqm.h"
+#include "../ll/ads131.h" // ADC_SAMPLE_RATE
 
 #include <stdlib.h>
 #include <math.h>
@@ -68,14 +70,10 @@ int8_t Detect_str_to_dir( const char* str )
 //////////////////////////////////////////
 // mode configuration
 
-static void clear_ch_one( void )
-{
-    FTrack_stop();
-}
 
 void Detect_none( Detect_t* self )
 {
-    if( self->channel == 0 ){ clear_ch_one(); }
+    FreqM_track( self->channel, 0.0f ); // stop any freq tracking
     self->modefn = d_none;
 }
 
@@ -84,7 +82,7 @@ void Detect_stream( Detect_t*         self
                   , float             interval
                   )
 {
-    if( self->channel == 0 ){ clear_ch_one(); }
+    FreqM_track( self->channel, 0.0f ); // stop any freq tracking
     self->modefn         = d_stream;
     self->action         = cb;
     // SAMPLE_RATE * i / BLOCK_SIZE
@@ -100,7 +98,7 @@ void Detect_change( Detect_t*         self
                   , int8_t            direction
                   )
 {
-    if( self->channel == 0 ){ clear_ch_one(); }
+    FreqM_track( self->channel, 0.0f ); // stop any freq tracking
     self->modefn            = d_change;
     self->action            = cb;
     self->change.threshold  = threshold;
@@ -131,7 +129,7 @@ void Detect_scale( Detect_t*         self
                  , float             scaling
                  )
 {
-    if( self->channel == 0 ){ clear_ch_one(); }
+    FreqM_track( self->channel, 0.0f ); // stop any freq tracking
     self->modefn = d_scale;
     self->action = cb;
 
@@ -169,7 +167,7 @@ void Detect_window( Detect_t*         self
                   , float             hysteresis
                   )
 {
-    if( self->channel == 0 ){ clear_ch_one(); }
+    FreqM_track( self->channel, 0.0f ); // stop any freq tracking
     printf("TODO need to sort the windows!\n");
     self->modefn         = d_window;
     self->action         = cb;
@@ -185,7 +183,7 @@ void Detect_volume( Detect_t*         self
                   , float             interval
                   )
 {
-    if( self->channel == 0 ){ clear_ch_one(); }
+    FreqM_track( self->channel, 0.0f ); // stop any freq tracking
     self->modefn         = d_volume;
     self->action         = cb;
 
@@ -202,7 +200,7 @@ void Detect_peak( Detect_t*         self
                 , float             hysteresis
                 )
 {
-    if( self->channel == 0 ){ clear_ch_one(); }
+    FreqM_track( self->channel, 0.0f ); // stop any freq tracking
     self->modefn            = d_peak;
     self->action            = cb;
     // TODO perhaps a abs->2lpf (no RMS averaging) is better?
@@ -219,21 +217,15 @@ void Detect_freq( Detect_t*         self
                 , float             interval
                 )
 {
-    // only first chan supports freq tracking. otherwise ignore
-    if( self->channel == 0 ){
-        clear_ch_one(); 
-        self->modefn = d_freq;
-
-        // below is same as 'stream'
-        self->action = cb;
-        // SAMPLE_RATE * i / BLOCK_SIZE
-        self->stream.blocks  = (int)((48000.0 * interval) / 32.0);
-        if( self->stream.blocks <= 0 ){ self->stream.blocks = 1; }
-        self->stream.countdown = self->stream.blocks;
-
-        FTrack_init();
-        FTrack_start();
-    }
+    // both channels: zero-crossing timing on the continuous ADC stream (freqm.c)
+    // `interval` is both the measurement window and the report rate
+    if( interval < 0.01f ){ interval = 0.01f; }
+    self->modefn = d_freq;
+    self->action = cb;
+    self->stream.blocks  = (int)((ADC_SAMPLE_RATE * interval) / 32.0f);
+    if( self->stream.blocks <= 0 ){ self->stream.blocks = 1; }
+    self->stream.countdown = self->stream.blocks;
+    FreqM_track( self->channel, interval );
 }
 
 //////////////////////////////////////////////
@@ -354,7 +346,7 @@ static void d_peak( Detect_t* self, float level )
 
 static void d_freq( Detect_t* self, float level )
 {
-    float f = FTrack_get(); // call every block
+    float f = FreqM_tracked( self->channel );
     if( --self->stream.countdown <= 0 ){
         self->stream.countdown = self->stream.blocks; // reset counter
         (*self->action)( self->channel
