@@ -98,6 +98,41 @@
 
 #define ADS_DATAWORDSIZE 0x2 // 16bit, pin M1 floats
 
+typedef struct{
+    uint8_t  mode;
+    uint8_t  tim_period; // TIM2 ticks per CLKIN (216MHz / n)
+    uint8_t  clk1, clk2, ena;
+    uint32_t spi_br;     // SPI_BAUDRATEPRESCALER_*
+    uint32_t wait_us;    // mode 0 read delay
+    uint32_t period;     // mode 2 grid spacing, cpu cycles
+    int32_t  offset;     // mode 2 grid offset, cpu cycles
+    uint32_t margin;     // mode 2 lead time, cpu cycles
+    uint32_t spb;        // mode 4 samples per block (8 or 32)
+    uint32_t edge;       // mode 4 cs/drdy falling edge, cycles into each sample period
+    uint32_t txcmd;      // mode 4 first word of every frame (0 = NULL)
+} ADC_cfg_t;
+
+typedef struct{
+    uint32_t frames;
+    uint32_t stat_bits[7]; // STAT_1 bit counts: 0 check,1 drdy,2 resync,3 wdt,4 adcin,5 spi,6 opc
+    uint32_t bad_header;
+    uint32_t last_status;
+    uint32_t stat_m2;
+    uint32_t busy, late, spin_max;
+    uint32_t blk_last, blk_n, blk_min, blk_max;
+    uint64_t blk_sum;
+    uint32_t slips, ring_dist, last_other;
+} ADC_dbg_t;
+
+extern int16_t* adc_cap;   // malloc'd by adc_debug('capture')
+extern uint32_t adc_cap_len;
+extern volatile uint32_t adc_cap_n;
+extern uint8_t adc_cap_ch;
+extern ADC_cfg_t adc_cfg;
+extern ADC_dbg_t adc_dbg;
+void ADC_Reconfig( void );
+void ADC_DebugReset( void );
+
 void ADC_Init( uint16_t bsize, uint8_t chan_count, int timer_ix );
 
 //int32_t

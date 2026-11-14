@@ -36,6 +36,7 @@
 #include "l_bootstrap.h"
 #include "l_crowlib.h"
 #include "telemetry.h"
+#include "adc_dbg.h"
 
 
 // Basic crow script
@@ -896,6 +897,7 @@ static const struct luaL_Reg libCrow[]=
 #ifdef TELEMETRY
         // test suite
     , { "sys_telemetry"     , Telemetry_lua     }
+    , { "adc_debug"         , ADC_Debug_lua     }
 #endif
 
     , { NULL               , NULL              }

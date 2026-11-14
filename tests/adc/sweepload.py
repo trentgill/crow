@@ -1,0 +1,15 @@
+import adcbench as a, time, sys
+secs = float(sys.argv[1])
+c = a.connect()
+c.lua("output[1].action=lfo(0.001,4,'sine'); output[1]()")
+c.lua("input[2].mode('stream',0.005)")
+c.lua("busy=metro.init(function() local x=0 for i=1,3000 do x=x+math.sin(i) end end, 0.002) busy:start()")
+d = a.window(c, 2)
+print('flags:', {k: d[k] for k in d if k.startswith('f_')}, flush=True)
+for e in range(1008, 1008+18):
+    a.setcfg(c, edge=e); a.apply(c); time.sleep(0.3)
+    c.events.clear()
+    d = a.window(c, secs)
+    print('edge +%2d resync %3d slips %d' % (e-1008, d['f_resync'], d['slips']), flush=True)
+c.lua("busy:stop() input[2].mode('none') output[1].action=to(0,0) output[1]()")
+a.setcfg(c, edge=1008); a.apply(c)
