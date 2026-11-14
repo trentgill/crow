@@ -14,9 +14,16 @@
 // #define I2C_TIMING_STABLE  0xD0421C0C // runs at 55kHz
 // #define I2C_TIMING_SPEED   0xA0420B07 // runs at 320kHz
 // new v4.0.2 after much research of i2c & setting up a high-cap setup
-#define I2C_TIMING_STABLE  0xA0411626 // 97~148kHz depending on bus capacitance
-#define I2C_TIMING_SPEED   0x60440B13 // 165~350kHz depending on bus capacitance
-#define I2C_TIMING_CLASSIC 0xB042080B // old timings for regression testing
+// v4.0.2 values were tuned with I2C1 clocked from a 108MHz PCLK1, which is
+// over the 54MHz APB1 rating. these are the same SCL low/high, setup and hold
+// times re-expressed for 54MHz: SCL low and high within ~1%, setup and hold
+// rounded up. counts below are in kernel clock cycles (field + 1)
+//   was 0xA0411626: presc 11 -> 5, scll 39 -> 43, sclh 23 -> 25, scldel 5 -> 6
+#define I2C_TIMING_STABLE  0x4051182A // 97~148kHz depending on bus capacitance
+//   was 0x60440B13: presc 7 -> 3, scll 20 -> 23, sclh 12 -> 14, sdadel 4 -> 5, scldel 5 -> 6
+#define I2C_TIMING_SPEED   0x20550D16 // 165~350kHz depending on bus capacitance
+//   was 0xB042080B: presc 12 -> 6, the rest unchanged (exact)
+#define I2C_TIMING_CLASSIC 0x5042080B // old timings for regression testing
   // 157~320kHz for classic mode.
 
 #define I2Cx                            I2C1
@@ -50,10 +57,85 @@
 #define I2C_BUFFER_LEN    32
 
 
+///////////////////////////
+// counters, for ii.stats(). written from the i2c interrupts and from ii.c
+typedef struct{
+    // leading
+    uint32_t lead_tx;        // write transfers started
+    uint32_t lead_rx;        // query transfers started
+    uint32_t lead_tx_done;   // write completed (STOP sent, all bytes ACKed)
+    uint32_t lead_rx_done;   // query answer received
+    uint32_t start_busy;     // could not start: bus busy
+    uint32_t start_state;    // could not start: driver not listening
+    uint32_t ready_timeout;  // driver stuck for I2C_STUCK_MS: reset and recovered
+    uint32_t recover;        // peripheral resets
+    uint32_t bus_clocks;     // SCL pulses sent to free a held SDA
+    uint32_t scl_held;       // SCL still low after recovery (another device holds it)
+    uint32_t sda_held;       // SDA still low after recovery
+    uint32_t idle_busy;      // bus left BUSY with both lines high (a leader vanished mid-transfer)
+    // driver state just before the last reset
+    uint32_t stuck_op, stuck_isr, stuck_cr1, stuck_cr2, stuck_hal, stuck_lines;
+    uint32_t abort_done;
+    uint32_t start_stuck;    // our START never went out (two leaders started together)
+    uint32_t lost;           // transfers to send again: arbitration lost or start stuck
+    uint32_t lead_yield;     // addressed by another leader while ours was pending: became follower
+    uint32_t berr_ignored;   // spurious bus error in master mode (errata 2.13.4)
+    // following
+    uint32_t follow_addr_rx; // our address matched, leader writing
+    uint32_t follow_addr_tx; // our address matched, leader reading
+    uint32_t follow_rx_done;
+    uint32_t follow_tx_done;
+    uint32_t follow_defer;   // answer deferred to the main loop (SCL held)
+    uint32_t follow_stale;   // deferred answer ready after the leader gave up
+    uint32_t follow_start_fail; // HAL refused to start a follower transfer
+    uint32_t follow_pad;     // padding bytes queued after our answer
+    // errors (HAL ErrorCode bits, each counted)
+    uint32_t err_af;
+    uint32_t err_arlo;
+    uint32_t err_berr;
+    uint32_t err_ovr;
+    uint32_t err_other;
+    uint32_t ev_arlo;        // ARLO seen in the event interrupt
+    uint32_t listen_fail;    // could not re-enable listen
+    uint32_t txdr_flush;     // a stale byte was flushed from TXDR before leading
+    // ii layer
+    uint32_t q_full;         // leader queue full, message dropped
+    uint32_t retry;
+    uint32_t abandon;        // dropped after a failed retry
+    uint32_t fq_full;        // follower queue full, message dropped
+    uint32_t nack_drop;      // dropped: no follower answered to the address
+    uint32_t abandon_tries;  // attempts made on the last dropped message
+    uint32_t abandon_err;    // error from its last attempt
+    // timing
+    uint32_t busy_max_us;    // longest time away from listening
+} I2C_Stats_t;
+
+extern I2C_Stats_t i2c_stats;
+void I2C_ResetStats( void );
+
+// a snapshot of the peripheral and driver state, for debugging a stuck bus
+typedef struct{
+    uint32_t isr, cr1, cr2;
+    uint8_t  hal_state, hal_mode, op, scl, sda;
+    uint32_t hal_error;
+} I2C_Diag_t;
+void I2C_GetDiag( I2C_Diag_t* d );
+
+// event trace (TELEMETRY builds): entry ix, oldest first. 0 past the end
+int I2C_GetTrace( int ix, uint32_t* t, uint32_t* packed );
+void I2C_TraceRestart( void );
+void I2C_TraceEvent( uint8_t ev, uint8_t arg ); // for ii.c: 19 abandon
+
+
 ///////////////////////////////////////
 // fnptr typedefs for low-level
 typedef void (*I2C_lead_callback_t)( uint8_t address, uint8_t command, uint8_t* rx_data );
 typedef int (*I2C_follow_callback_t)( uint8_t* pdata );
+// a leader is reading from us. `fresh` is true when pdata holds the request it
+// wrote just before (repeated start), false when the request came in an earlier
+// transfer. return the number of bytes to send, or -1 to answer later with
+// I2C_FollowRespond() (SCL is held low until then)
+typedef int (*I2C_request_callback_t)( uint8_t* pdata, int fresh );
 typedef void (*I2C_error_callback_t)( int error_code );
 
 
@@ -62,7 +144,7 @@ typedef void (*I2C_error_callback_t)( int error_code );
 uint8_t I2C_Init( uint8_t               address
                 , I2C_lead_callback_t   lead_callback
                 , I2C_follow_callback_t follow_action_callback
-                , I2C_follow_callback_t follow_request_callback
+                , I2C_request_callback_t follow_request_callback
                 , I2C_error_callback_t  error_callback );
 void I2C_DeInit( void );
 
@@ -77,8 +159,21 @@ uint8_t I2C_GetAddress( void );
 void I2C_SetAddress( uint8_t address );
 
 
+// send the answer to a request that I2C_request_callback_t deferred.
+// returns 0 if sent, 1 if no leader is waiting for it any more
+int I2C_FollowRespond( uint8_t* data, int size );
+
+
 /////////////////////////
 // lead the bus
+
+// outcome of the last transfer we led, read (and cleared) by I2C_LeadResult()
+#define I2C_LEAD_NONE 0
+#define I2C_LEAD_DONE 1 // finished, or failed for good (no ACK)
+#define I2C_LEAD_LOST 2 // another leader got the bus first, or our START never went out: try again
+#define I2C_LEAD_NACK 3 // nobody answered to the address: absent, or busy resetting itself
+int I2C_LeadResult( void );
+
 int I2C_is_ready( void );
 int I2C_LeadTx( uint8_t  address
               , uint8_t* data

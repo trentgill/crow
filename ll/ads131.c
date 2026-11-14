@@ -41,7 +41,7 @@ ADC_cfg_t adc_cfg = { .mode       = 4
                     , .clk1       = 0x02 // fICLK = CLKIN/2
                     , .clk2       = 0x2D // fMOD = fICLK/2 = 3MHz, OSR 64 -> 46.875kHz
                     , .ena        = 0x03
-                    , .spi_br     = SPI_BAUDRATEPRESCALER_16 // 13.5MHz
+                    , .spi_br     = SPI_BAUDRATEPRESCALER_8 // 13.5MHz (PCLK2 108MHz)
                     , .wait_us    = 630
                     , .period     = 147456 // 32 ADC frames of 4608 cycles (not the DAC block)
                     , .offset     = 0
@@ -88,7 +88,7 @@ void ADC_Init( uint16_t bsize, uint8_t chan_count, int timer_ix )
     adc_spi.Init.CLKPolarity       = SPI_POLARITY_LOW;
     adc_spi.Init.CLKPhase          = SPI_PHASE_2EDGE;
     adc_spi.Init.NSS               = SPI_NSS_SOFT;
-    adc_spi.Init.BaudRatePrescaler = adc_cfg.spi_br; // /128 -> 1.69MHz (PCLK2 216MHz)
+    adc_spi.Init.BaudRatePrescaler = adc_cfg.spi_br; // of PCLK2 (108MHz)
     adc_spi.Init.FirstBit          = SPI_FIRSTBIT_MSB;
     adc_spi.Init.TIMode            = SPI_TIMODE_DISABLE;
     adc_spi.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;
@@ -429,8 +429,10 @@ static void m4_start( void )
     DMA2_Stream0->CR |= DMA_SxCR_EN;
     SPIa->CR1 |= SPI_CR1_SPE;
 
-    // tim8: same 216MHz clock as tim2
-    uint32_t word = 16 * (2u << ((adc_cfg.spi_br >> 3) & 7)); // cycles per 16-bit word
+    // tim8: same 216MHz clock as tim2. SPI1 runs from PCLK2, so scale its
+    // bit time up to timer cycles
+    uint32_t tim_per_pclk2 = SystemCoreClock / HAL_RCC_GetPCLK2Freq();
+    uint32_t word = 16 * (2u << ((adc_cfg.spi_br >> 3) & 7)) * tim_per_pclk2; // cycles per 16-bit word
     TIM8->CR1  = 0;
     TIM8->PSC  = 0;
     TIM8->ARR  = period - 1;

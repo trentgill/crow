@@ -30,6 +30,7 @@ const char* ii_list_cmds( uint8_t address );
 uint8_t ii_leader_enqueue( uint8_t address, uint8_t cmd, float* data );
 uint8_t ii_leader_enqueue_bytes( uint8_t address , uint8_t* data , uint8_t tx_len, uint8_t rx_len );
 void ii_leader_process( void ); // call from event loop
+void ii_follow_process( void ); // call from event loop: answers queries
 
 
 ///////////////////////////
