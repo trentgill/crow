@@ -639,7 +639,7 @@ static void ADC_Cont_FrameDone( void )
     DMA2->LIFCR = DMA_S0_FLAGS | DMA_S3_FLAGS;
     // wait for the final SCLK to finish before releasing !CS
     SPI_TypeDef* spi = adc_spi.Instance;
-    while( spi->SR & SPI_SR_BSY ){}
+    for( int i=0; (spi->SR & SPI_SR_BSY) && i<2000; i++ ){} // bounded (~10us)
     SPIa_NSS_GPIO_PORT->BSRR = SPIa_NSS_PIN; // !CS high
     SPIa_TX_DMA_STREAM->CR &= ~DMA_SxCR_EN;
 

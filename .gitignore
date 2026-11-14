@@ -68,3 +68,4 @@ build/
 druid/
 crow-*/
 *.swp
+util/__pycache__/
