@@ -22,7 +22,7 @@ local in_file_dir = arg[1]
 local out_file = arg[2]
 
 do
-    dir = io.popen('/bin/ls ' .. in_file_dir)
+    dir = io.popen((package.config:sub(1,1) == '\\') and ('dir /b "' .. in_file_dir:gsub('/', '\\') .. '"') or ('/bin/ls ' .. in_file_dir))
     files = {}
     for filename in dir:lines() do
         table.insert(files, dofile('lua/ii/' .. filename))
