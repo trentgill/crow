@@ -31,7 +31,9 @@ int ADC_Debug_lua( lua_State* L )
     if( !strcmp( cmd, "reset" ) ){ ADC_DebugReset(); return 0; }
     if( !strcmp( cmd, "apply" ) ){ ADC_Reconfig(); return 0; }
     if( !strcmp( cmd, "capture" ) ){ // adc_debug('capture', ch) raw int16 of in[ch] (1|2)
-        adc_cap_ch = (luaL_optinteger( L, 2, 1 ) == 2);
+                                     // ch 3|4: in[1|2] as the block sees it, at the DAC rate
+        lua_Integer ch = luaL_optinteger( L, 2, 1 );
+        adc_cap_ch = (ch < 1 || ch > 4) ? 0 : (uint8_t)(ch - 1);
         uint32_t n = luaL_optinteger( L, 3, 1024 );
         adc_cap_len = 0; // stop the writer first
         if( n > 16384 ){ n = 16384; }

@@ -3,6 +3,7 @@
 #include <stm32f7xx_hal.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "timers.h"
 #include "debug_pin.h"
@@ -42,7 +43,7 @@ ADC_cfg_t adc_cfg = { .mode       = 4
                     , .ena        = 0x03
                     , .spi_br     = SPI_BAUDRATEPRESCALER_16 // 13.5MHz
                     , .wait_us    = 630
-                    , .period     = 147456
+                    , .period     = 147456 // 32 ADC frames of 4608 cycles (not the DAC block)
                     , .offset     = 0
                     , .margin     = 4000
                     , .spb        = 32
@@ -341,7 +342,7 @@ void ADC_UnpickleBlock( float*   unpickled
 //   CC1  -> DMA2 S2 ch7 : GPIOA->BSRR = PA4 low  (cs + drdy falling edge)
 //   CC2,3,4 -> DMA2 S3,S4,S7 ch7 : SPI1->DR = word (16 SCLKs each)
 //   SPI1 RX -> DMA2 S0 ch3 circular into rx_ring
-// No CPU per sample. The block ISR reads the ring 32 samples behind the writer.
+// No CPU per sample. The block ISR reads the ring about 48 frames behind the writer.
 #define RING_SAMPS 64
 #define RING_WORDS (RING_SAMPS * ADC_FRAMES)
 static volatile uint16_t rx_ring[RING_WORDS];
@@ -351,7 +352,6 @@ volatile uint16_t tx_word0 = 0;
 static uint16_t tx_zero = 0;
 static uint32_t m4_rd = 0;     // next sample to consume
 static uint8_t  m4_primed = 0;
-static float    m4_prev[2];
 int16_t* adc_cap = NULL;
 uint32_t adc_cap_len = 0;
 volatile uint32_t adc_cap_n = 0; // == len: idle
@@ -465,69 +465,90 @@ static inline float m4_volts( int16_t raw, int ch ){
     return (float)raw * adc_calibrated_scalar[ch] + adc_calibrated_shift[ch];
 }
 
+// The ADC and the DAC run at different rates, both locked to the same 8MHz
+// crystal. The ADC frame is 4608 cpu cycles (46.875kHz at 32 per block). The
+// DAC's I2S clock is PLLI2S 344/2 = 172MHz with 3584 I2S clocks per sample
+// (47.991kHz), which is 4500 36/43 cpu cycles. No whole number of CLKIN cycles
+// fits a DAC sample, so the ADC free-runs on its own grid (no resyncs) and the
+// block reads it at the exact ratio: 42 ADC frames per 43 DAC samples, linearly
+// interpolated. Integer phase, so the reader never drifts from the writer.
+#define M4_NUM_32  42 // ADC frames per M4_DEN DAC samples, at 32 frames per ADC block
+#define M4_DEN     (43 * 32)
+static uint32_t m4_frac = 0; // reader phase between frames m4_rd and m4_rd+1, /M4_DEN
+
+static inline volatile uint16_t* m4_frame( uint32_t r ){
+    return &rx_ring[(r % RING_SAMPS) * ADC_FRAMES];
+}
+
 // fill the block from the ring. called from the block ISR.
 static void m4_unpickle( float* unpickled, uint16_t bsize )
 {
     uint32_t wr = (RING_WORDS - DMA2_Stream0->NDTR) / ADC_FRAMES; // samples complete (mod ring)
     uint32_t spb = adc_cfg.spb;
+    uint32_t step = M4_NUM_32 * spb; // per DAC sample, /M4_DEN frames
     uint32_t lag = spb + spb/2;
     if( m4_primed < 3 ){ // first blocks: one STAT_S read clears F_SPI from the restart
-        if( m4_primed == 0 ){ m4_rd = (wr + RING_SAMPS - lag) % RING_SAMPS; }
+        if( m4_primed == 0 ){ m4_rd = (wr + RING_SAMPS - lag) % RING_SAMPS; m4_frac = 0; }
         tx_word0 = (m4_primed == 1) ? 0x2500 : adc_cfg.txcmd;
         m4_primed++;
     }
     uint32_t dist = (wr + RING_SAMPS - m4_rd) % RING_SAMPS;
     adc_dbg.ring_dist = dist;
-    if( dist < spb + 2 || dist > lag + spb/2 + 2 ){ // re-centre
+    // a block reads at most bsize*step/M4_DEN + 2 frames past m4_rd
+    if( dist < (bsize*step)/M4_DEN + 3 || dist > lag + spb/2 + 2 ){ // re-centre
         adc_dbg.slips++;
         m4_rd = (wr + RING_SAMPS - lag) % RING_SAMPS;
+        m4_frac = 0;
     }
-    uint16_t stor = 0;
+    uint32_t r0 = m4_rd;
+    uint32_t r = m4_rd;
+    uint32_t frac = m4_frac;
+    const float iden = 1.0f / (float)M4_DEN;
     float* out0 = unpickled;
     float* out1 = unpickled + bsize;
-    uint32_t r = m4_rd;
-    if( spb == bsize ){
-        for( uint32_t i=0; i<spb; i++ ){
-            volatile uint16_t* f = &rx_ring[r * ADC_FRAMES];
-            stor |= f[0];
-            if( (f[0] & 0xFF00) != 0x2200 ){ adc_dbg.last_other = f[0]; }
-            out0[i] = m4_volts( (int16_t)f[1], 0 );
-            out1[i] = m4_volts( (int16_t)f[2], 1 );
-            if( adc_cap_n < adc_cap_len ){ adc_cap[adc_cap_n++] = (int16_t)f[1+adc_cap_ch]; }
-            if( ++r == RING_SAMPS ){ r = 0; }
+    volatile uint16_t* f = m4_frame( r );
+    volatile uint16_t* g = m4_frame( r+1 );
+    float a0 = m4_volts( (int16_t)f[1], 0 ), b0 = m4_volts( (int16_t)g[1], 0 );
+    float a1 = m4_volts( (int16_t)f[2], 1 ), b1 = m4_volts( (int16_t)g[2], 1 );
+    for( uint32_t i=0; i<bsize; i++ ){
+        float t = (float)frac * iden;
+        out0[i] = a0 + (b0 - a0) * t;
+        out1[i] = a1 + (b1 - a1) * t;
+        if( adc_cap_ch >= 2 && adc_cap_n < adc_cap_len ){ // block-rate capture, raw units
+            int c = adc_cap_ch - 2;
+            float v = c ? out1[i] : out0[i];
+            adc_cap[adc_cap_n++] = (int16_t)lrintf( (v - adc_calibrated_shift[c]) / adc_calibrated_scalar[c] );
         }
-    } else { // linear interpolation up to bsize
-        uint32_t k = bsize / spb;
-        float ik = 1.0f / (float)k;
-        for( uint32_t i=0; i<spb; i++ ){
-            volatile uint16_t* f = &rx_ring[r * ADC_FRAMES];
-            stor |= f[0];
-            if( (f[0] & 0xFF00) != 0x2200 ){ adc_dbg.last_other = f[0]; }
-            if( adc_cap_n < adc_cap_len ){ adc_cap[adc_cap_n++] = (int16_t)f[1+adc_cap_ch]; }
-            float a = m4_volts( (int16_t)f[1], 0 );
-            float b = m4_volts( (int16_t)f[2], 1 );
-            float da = (a - m4_prev[0]) * ik;
-            float db = (b - m4_prev[1]) * ik;
-            for( uint32_t j=0; j<k; j++ ){
-                m4_prev[0] += da; *out0++ = m4_prev[0];
-                m4_prev[1] += db; *out1++ = m4_prev[1];
-            }
-            m4_prev[0] = a; m4_prev[1] = b;
-            if( ++r == RING_SAMPS ){ r = 0; }
+        frac += step;
+        while( frac >= M4_DEN ){
+            frac -= M4_DEN;
+            r++;
+            g = m4_frame( r+1 );
+            a0 = b0; b0 = m4_volts( (int16_t)g[1], 0 );
+            a1 = b1; b1 = m4_volts( (int16_t)g[2], 1 );
         }
-        out0 = unpickled; out1 = unpickled + bsize;
     }
+    r %= RING_SAMPS;
     m4_rd = r;
+    m4_frac = frac;
     last[0] = out0[bsize-1];
     last[1] = out1[bsize-1];
-    adc_dbg.frames += spb;
+
+    // status, capture and counters for the frames this block moved past
+    uint32_t n = (r + RING_SAMPS - r0) % RING_SAMPS;
+    uint16_t stor = 0;
+    for( uint32_t i=0; i<n; i++ ){
+        volatile uint16_t* h = m4_frame( r0 + i );
+        stor |= h[0];
+        if( (h[0] & 0xFF00) != 0x2200 ){ adc_dbg.last_other = h[0]; }
+        if( adc_cap_ch < 2 && adc_cap_n < adc_cap_len ){ adc_cap[adc_cap_n++] = (int16_t)h[1+adc_cap_ch]; }
+    }
+    adc_dbg.frames += n;
     if( stor & 0x7F ){ // count flags per sample only when any were set
-        uint32_t q = (r + RING_SAMPS - spb) % RING_SAMPS;
-        for( uint32_t i=0; i<spb; i++ ){
-            uint16_t st = rx_ring[q * ADC_FRAMES];
+        for( uint32_t i=0; i<n; i++ ){
+            uint16_t st = *m4_frame( r0 + i );
             for( int b=0; b<7; b++ ){ if( st & (1<<b) ){ adc_dbg.stat_bits[b]++; } }
             adc_dbg.last_status = st;
-            if( ++q == RING_SAMPS ){ q = 0; }
         }
     }
 }
