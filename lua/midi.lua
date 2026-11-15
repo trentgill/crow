@@ -71,7 +71,9 @@ function Voice:claim(o)
                          , to(0, dyn{r=self.release}, 'log')
                          }
         else
-            out.action = { to(dyn{peak=self.level}, 0, 'now')
+            -- a 0.1 ms rise, not a zero-time 'now': casl skips every other
+            -- retrigger of a zero-time first segment
+            out.action = { to(dyn{peak=self.level}, 0.0001, 'linear')
                          , to(0, dyn{d=self.decay}, 'log')
                          }
         end
