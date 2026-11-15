@@ -370,6 +370,95 @@ function M.cv_cc(t)
 end
 
 
+--- config: channel 16. ordinary CCs, NRPNs & program changes, so a DAW
+-- project or a .mid file can set crow up (no sysex)
+local Config = {}
+Config.__index = Config
+
+-- NRPN 1/<channel> = behaviour id, NRPN 2/<channel> = first jack
+local function fit(j, n) return math.max(1, math.min(j, 5 - n)) end -- n jacks from j
+M.kinds = { function()  return nil end                                          -- 0 none
+          , function(j) j = fit(j, 2); return M.voice{ v8 = j, gate = j+1 } end -- 1 trigger voice
+          , function(j) j = fit(j, 2); return M.voice{ v8 = j, gate = j+1, env = 'adsr' } end -- 2 ADSR
+          , function(j) local t = {} for o=j,4 do t[16+o-j] = o end return M.cc(t) end -- 3 CCs
+          , function() return M.voice{ v8 = 1, gate = 2, vel = 3, cc = {[1] = 4} } end -- 4 voice + CCs
+          , function() return M.duo{} end                                       -- 5 duo
+          , function() return M.jf{} end                                        -- 6 Just Friends
+          , function() return M.wsyn{} end                                      -- 7 W/Syn
+          , function(j) j = fit(j, 4) return M.drums{ [36] = j, [38] = j+1, [42] = j+2, [46] = j+3 } end -- 8
+          }
+M.jack = {} -- first jack per channel, as NRPN 2 set it
+
+function M.config()
+    return setmetatable({ clock = {}, cap = { delay = 0.002 }, cv = { ch = 1, rate = 0.01 }
+                        , nrpn = {0, 0} }, Config)
+end
+
+local function clock_jack(v) return (v >= 1 and v <= 4) and v or nil end
+
+function Config:clock_update()
+    local k = self.clock
+    if k.out or k.run then
+        M.clock{ out = k.out, div = k.div or 6, run = k.run, run_mode = k.mode }
+    else
+        M.clock()
+    end
+end
+
+function Config:cv_update(n, ccnum)
+    if ccnum and ccnum > 0 then
+        M.cv_cc{ input = n, ch = self.cv.ch, cc = ccnum, rate = self.cv.rate, range = self.cv.range }
+    else
+        M.cv_cc{ input = n }
+    end
+    self.cv[n] = ccnum
+end
+
+function Config:cc(num, val)
+    local k = self.clock
+    if     num == 20 then k.out = clock_jack(val); self:clock_update()
+    elseif num == 21 then k.div = math.max(1, val); if M.clk then M.clk.div = k.div end
+    elseif num == 22 then k.run = clock_jack(val); self:clock_update()
+    elseif num == 23 then k.mode = (val >= 64) and 'trig' or 'gate'; self:clock_update()
+    elseif num == 24 then
+        if val >= 1 and val <= 16 then
+            M.capture{ ch = val, delay = self.cap.delay }
+        else M.capture() end
+    elseif num == 25 then
+        self.cap.delay = val / 1000
+        if M.cap then M.cap.delay = self.cap.delay end
+    elseif num == 26 or num == 27 then self:cv_update(num - 25, val)
+    elseif num == 28 or num == 29 then
+        if num == 28 then self.cv.ch = math.max(1, math.min(16, val))
+        else self.cv.rate = math.max(1, val) / 100 end
+        for n=1,2 do if self.cv[n] then self:cv_update(n, self.cv[n]) end end
+    elseif num == 99 then self.nrpn[1] = val -- NRPN parameter MSB
+    elseif num == 98 then self.nrpn[2] = val -- ..LSB: the target channel
+    elseif num == 6 then -- data entry MSB
+        local p, ch = self.nrpn[1], self.nrpn[2]
+        if ch < 1 or ch > 15 then return end -- 16 stays the config channel
+        local function assign(kind)
+            local b = M.kinds[kind + 1](M.jack[ch] or 1)
+            if b then b.kind = kind end
+            M.ch[ch] = b
+        end
+        if p == 1 and M.kinds[val + 1] then
+            assign(val)
+        elseif p == 2 and val >= 1 and val <= 4 then
+            M.jack[ch] = val
+            local b = M.ch[ch]
+            if type(b) == 'table' and b.kind then assign(b.kind) end
+        end
+    end
+end
+
+function Config:program(p)
+    if p == 127 then usb.audio(true)
+    elseif p == 126 then usb.audio(false)
+    elseif p == 120 then M.reset() end
+end
+
+
 --- the default channel map: live at boot and after midi.reset()
 function M.defaults()
     M.ch = {}
@@ -382,6 +471,7 @@ function M.defaults()
     M.ch[7]  = M.jf{}
     M.ch[8]  = M.wsyn{}
     M.ch[10] = M.drums{}
+    M.ch[16] = M.config()
 end
 
 function M.reset()
@@ -390,6 +480,7 @@ function M.reset()
     M.capture()
     M.cv_cc()
     M.owner = {}
+    M.jack = {}
     M.defaults()
 end
 
@@ -414,6 +505,8 @@ function midi_handler(st, d1, d2)
         if b.cc then b:cc(d1, d2) end
     elseif kind == 0xE0 then
         if b.bend then b:bend(d1 | (d2 << 7)) end
+    elseif kind == 0xC0 then
+        if b.program then b:program(d1) end
     end
 end
 
