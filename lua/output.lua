@@ -49,8 +49,10 @@ Output.__newindex = function(self, ix, val)
         if type(val) == 'string' then -- resolve string ASL to datastructure
             val = assert(load('return '..val))()
         end
+        usb_audio_output(self.channel, false) -- the script takes the jack from usb audio
         self.asl:describe(val)
     elseif ix == 'volts' then
+        usb_audio_output(self.channel, false)
         self.asl:describe(to(val, self.slew, self.shape))
         self.asl:action()
     elseif ix == 'scale' then
@@ -85,7 +87,9 @@ Output.__index = function(self, ix)
 end
 
 Output.__call = function(self, arg)
-    if type(arg) == 'table' then -- being passed a literal asl to interpret & begin
+    if arg == 'usb' then -- hand the jack back to the usb audio stream
+        usb_audio_output(self.channel, true)
+    elseif type(arg) == 'table' then -- being passed a literal asl to interpret & begin
         self.asl:describe(arg)
         self.asl:action()
     else self.asl:action(arg) end -- args are forwarded as an action
