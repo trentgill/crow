@@ -47,6 +47,8 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "usbd_main.h"
+#include "usbd_map.h"
+#include "usbd_composite.h" // USBD_COMPOSITE_IsAudio()
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -388,13 +390,13 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
 #ifdef USE_USB_FS
   /* Set LL Driver parameters */
   hpcd.Instance = USB_OTG_FS;
-  hpcd.Init.dev_endpoints = 4;
+  hpcd.Init.dev_endpoints = 6; // all of OTG_FS: EP0 + 5 each way
   hpcd.Init.use_dedicated_ep1 = 0;
   hpcd.Init.ep0_mps = 0x40;
   hpcd.Init.dma_enable = 0;
   hpcd.Init.low_power_enable = 0;
   hpcd.Init.phy_itface = PCD_PHY_EMBEDDED;
-  hpcd.Init.Sof_enable = 0;
+  hpcd.Init.Sof_enable = USBD_COMPOSITE_IsAudio(); // audio paces itself by frame
   hpcd.Init.speed = PCD_SPEED_FULL;
   hpcd.Init.vbus_sensing_enable = 1;
   hpcd.Init.lpm_enable = 0;
@@ -405,10 +407,25 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
   
   /* Initialize LL Driver */
   HAL_PCD_Init(&hpcd);
-// TODO: different in dfu driver
-  HAL_PCDEx_SetRxFiFo(&hpcd, 0x80);
-  HAL_PCDEx_SetTxFiFo(&hpcd, 0, 0x40);
-  HAL_PCDEx_SetTxFiFo(&hpcd, 1, 0x80);
+  // 320 words (1280 bytes) of FIFO RAM for everything. One receive FIFO for
+  // all OUT endpoints, one transmit FIFO per IN endpoint (16 words minimum).
+  if( USBD_COMPOSITE_IsAudio() ){
+      // receive holds a 392 byte audio packet plus serial & MIDI packets
+      HAL_PCDEx_SetRxFiFo(&hpcd, 160);
+      HAL_PCDEx_SetTxFiFo(&hpcd, 0, 16);                    // EP0
+      HAL_PCDEx_SetTxFiFo(&hpcd, EP_CDC_IN & 0x7F, 32);     // 2 serial packets
+      HAL_PCDEx_SetTxFiFo(&hpcd, EP_CDC_CMD & 0x7F, 16);
+      HAL_PCDEx_SetTxFiFo(&hpcd, EP_MIDI_IN & 0x7F, 16);
+      HAL_PCDEx_SetTxFiFo(&hpcd, EP_AUDIO_IN & 0x7F, 50);   // a 196 byte packet
+      HAL_PCDEx_SetTxFiFo(&hpcd, EP_AUDIO_FB & 0x7F, 16);   // = 306
+  } else {
+      // serial keeps the receive & transmit room it always had
+      HAL_PCDEx_SetRxFiFo(&hpcd, 128);
+      HAL_PCDEx_SetTxFiFo(&hpcd, 0, 16);                    // EP0
+      HAL_PCDEx_SetTxFiFo(&hpcd, EP_CDC_IN & 0x7F, 128);    // 8 serial packets
+      HAL_PCDEx_SetTxFiFo(&hpcd, EP_CDC_CMD & 0x7F, 16);
+      HAL_PCDEx_SetTxFiFo(&hpcd, EP_MIDI_IN & 0x7F, 16);    // = 304
+  }
 #endif
   
 #ifdef USE_USB_HS

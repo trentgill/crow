@@ -14,7 +14,9 @@
 #include "ll/random.h"
 #include "lib/lualink.h"
 #include "lib/repl.h"
-#include "usbd/usbd_cdc_interface.h" // CDC_main_init()
+#include "usbd/usbd_main.h" // USB_tick()
+#include "usbd/usbd_midi_interface.h" // USB_midi_process()
+#include "lib/midi.h" // MIDI_init()
 #include "lib/bootloader.h" // bootloader_enter(), bootloader_restart()
 #include "lib/flash.h" // Flash_clear_user_script()
 #include "stm32f7xx_it.h" // CPU_count;
@@ -45,6 +47,7 @@ int main(void)
     events_init();
     Metro_Init( max_timers-2 ); // reserve 2 timers for USB & ADC
     clock_init( 100 ); // TODO how to pass it the timer?
+    MIDI_init();
     Caw_Init();
     CDC_clear_buffers();
 
@@ -87,7 +90,9 @@ int main(void)
             clock_update(time_now);
             crashreport_tick(time_now);
             status_led_tick(time_now);
+            USB_tick(time_now);
         }
+        USB_midi_process(); // MIDI from the host
         event_next(); // check/execute single event
         ii_follow_process(); // first: a leader may be waiting on our answer
         ii_leader_process();

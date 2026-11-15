@@ -38,6 +38,7 @@ extern void L_queue_clock_resume( int coro_id );
 extern void L_queue_clock_start( void );
 extern void L_queue_clock_stop( void );
 extern void L_queue_tempo_change( float tempo );
+extern void L_handle_midi( const uint8_t* msg, uint8_t len );
 
 // Callback declarations
 extern float L_handle_ii_followRxTx( uint8_t cmd, int args, float* data );

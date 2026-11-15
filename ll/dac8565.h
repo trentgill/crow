@@ -53,6 +53,8 @@
 void DAC_Init( uint16_t bsize, uint8_t chan_count );
 void DAC_Start(void);
 
+uint16_t DAC_GetFrame( void ); // sample frame the DMA is reading: 0 .. 2*bsize-1
+
 void DAC_CalibrateScalar( uint8_t channel, float scale );
 void DAC_CalibrateOffset( uint8_t channel, float volts );
 void DAC_PickleBlock( uint32_t* dac_pickle_ptr

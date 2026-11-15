@@ -48,12 +48,18 @@
 /* Includes ------------------------------------------------------------------*/
 #include "usbd_core.h"
 #include "usbd_desc.h"
+#include "usbd_composite.h" // USBD_COMPOSITE_IsAudio()
 #include "usbd_conf.h"
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 #define USBD_VID                      0x0483
 #define USBD_PID                      0x5740
+// a new device revision for the composite device, and one per mode: Windows
+// caches what it learnt about a device by VID, PID and revision. 2.00 was
+// serial only.
+#define USBD_BCD_DEVICE               0x0300 // serial + MIDI
+#define USBD_BCD_DEVICE_AUDIO         0x0301 // serial + MIDI + audio
 #define USBD_LANGID_STRING            0x409
 #define USBD_MANUFACTURER_STRING      "monome & whimsical raps"
 #define USBD_PRODUCT_HS_STRING        "crow: telephone line"
@@ -96,16 +102,16 @@ __ALIGN_BEGIN uint8_t USBD_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
   USB_DESC_TYPE_DEVICE,       /* bDescriptorType */
   0x00,                       /* bcdUSB */
   0x02,
-  0x02,                       /* bDeviceClass */
-  0x02,                       /* bDeviceSubClass */
-  0x00,                       /* bDeviceProtocol */
+  0xEF,                       /* bDeviceClass: miscellaneous */
+  0x02,                       /* bDeviceSubClass: common class */
+  0x01,                       /* bDeviceProtocol: interface association */
   USB_MAX_EP0_SIZE,           /* bMaxPacketSize */
   LOBYTE(USBD_VID),           /* idVendor */
   HIBYTE(USBD_VID),           /* idVendor */
   LOBYTE(USBD_PID),           /* idVendor */
   HIBYTE(USBD_PID),           /* idVendor */
-  0x00,                       /* bcdDevice rel. 2.00 */
-  0x02,
+  LOBYTE(USBD_BCD_DEVICE),    /* bcdDevice: set per mode in */
+  HIBYTE(USBD_BCD_DEVICE),    /*   USBD_VCP_DeviceDescriptor */
   USBD_IDX_MFC_STR,           /* Index of manufacturer string */
   USBD_IDX_PRODUCT_STR,       /* Index of product string */
   USBD_IDX_SERIAL_STR,        /* Index of serial number string */
@@ -149,6 +155,9 @@ static void Get_SerialNum(void);
   */
 uint8_t *USBD_VCP_DeviceDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
 {
+  uint16_t bcd = USBD_COMPOSITE_IsAudio() ? USBD_BCD_DEVICE_AUDIO : USBD_BCD_DEVICE;
+  USBD_DeviceDesc[12] = LOBYTE(bcd);
+  USBD_DeviceDesc[13] = HIBYTE(bcd);
   *length = sizeof(USBD_DeviceDesc);
   return (uint8_t*)USBD_DeviceDesc;
 }

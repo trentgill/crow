@@ -1350,3 +1350,21 @@ void L_handle_tempo_change( event_t* e )
         lua_pop( L, 1 );
     }
 }
+
+// called straight from the main loop (not through the event queue), so a
+// burst waits in the USB receive ring, and the host is held off, rather than
+// overflowing the queue
+void L_handle_midi( const uint8_t* msg, uint8_t len )
+{
+    lua_getglobal(L, "midi_handler");
+    if( !lua_isfunction(L, -1) ){ // no MIDI library loaded: nothing to do
+        lua_pop( L, 1 );
+        return;
+    }
+    for( int i=0; i<len; i++ ){
+        lua_pushinteger(L, msg[i]);
+    }
+    if( Lua_call_usercode(L, len, 0) != LUA_OK ){
+        lua_pop( L, 1 );
+    }
+}

@@ -40,8 +40,7 @@ STM32_INCLUDES = \
 	-I$(CUBE)/STM32F7xx_HAL_Driver/Inc/ \
 	-I/usr/local/include/ \
 	-Iusbd/ \
-	-I$(USBD)/Class/CDC/Inc/ \
-	-I$(USBD)/Core/Inc/ \
+	-Iusbd/core/ \
 
 OPTIMIZE       = -O2
 
@@ -113,10 +112,10 @@ SRC = main.c \
 	$(wildcard lib/*.c) \
 	$(wildcard ll/*.c) \
 	$(wildcard usbd/*.c) \
-	$(USBD)/Core/Src/usbd_core.c \
-	$(USBD)/Core/Src/usbd_ctlreq.c \
-	$(USBD)/Core/Src/usbd_ioreq.c \
-	$(USBD)/Class/CDC/Src/usbd_cdc.c \
+	$(wildcard usbd/core/*.c) \
+	$(wildcard usbd/cdc_acm/*.c) \
+	$(wildcard usbd/midi/*.c) \
+	$(wildcard usbd/uac/*.c) \
 	$(WRLIB)/str_buffer.c \
 	$(WRLIB)/wrConvert.c \
 	$(WRLIB)/wrMath.c \
