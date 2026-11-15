@@ -309,6 +309,67 @@ local realtime = { [0xF8] = function(c) c:tick() end
                  }
 
 
+--- capture: a v8 + gate input pair -> notes to the host
+-- options: v8 (input), gate (input), ch (1-16), delay (s: lets the v8 settle
+--          after the gate), velocity, threshold (V)
+function M.capture(t)
+    if M.cap then input[M.cap.gate].mode('none') end
+    M.cap = nil
+    if not t then return end
+    local c = { v8 = t.v8 or 1, gate = t.gate or 2, ch = t.ch or 1, delay = t.delay or 0.002
+              , velocity = t.velocity or 100, held = nil }
+    M.cap = c
+    local st = c.ch - 1
+    input[c.gate].mode('change', t.threshold or 1, 0.1, 'both')
+    input[c.gate].change = function(high)
+        if high then
+            clock.run(function()
+                if c.delay > 0 then clock.sleep(c.delay) end
+                if M.cap ~= c then return end -- turned off meanwhile
+                local n = math.floor(input[c.v8].volts * 12 + 0.5) + M.note0
+                n = math.max(0, math.min(127, n))
+                if c.held then M.send(0x80 + st, c.held, 0) end
+                M.send(0x90 + st, n, c.velocity)
+                c.held = n
+            end)
+        elseif c.held then
+            M.send(0x80 + st, c.held, 0)
+            c.held = nil
+        end
+    end
+    return c
+end
+
+--- cv_cc: an input -> a CC to the host, sent when its 7-bit value changes
+-- options: input, ch (1-16), cc, rate (s between samples), range = {lo, hi} (V)
+M.cvcc = {}
+function M.cv_cc(t)
+    if not t or not t.cc then -- off: midi.cv_cc() for all, midi.cv_cc{input=n} for one
+        for n,_ in pairs(M.cvcc) do
+            if not t or t.input == n then input[n].mode('none'); M.cvcc[n] = nil end
+        end
+        return
+    end
+    local n = t.input or 1
+    local c = { ch = t.ch or 1, cc = t.cc, range = t.range or {0, 10}, last = -1 }
+    M.cvcc[n] = c
+    input[n].mode('stream', t.rate or 0.01)
+    input[n].stream = function(v)
+        local lo, hi = c.range[1], c.range[2]
+        local f = (v - lo) / (hi - lo) * 127
+        -- a step of hysteresis: a still input that sits on a boundary stays quiet
+        if f > c.last + 0.75 or f < c.last - 0.75 then
+            local val = math.max(0, math.min(127, math.floor(f + 0.5)))
+            if val ~= c.last then
+                c.last = val
+                M.send(0xB0 + c.ch - 1, c.cc, val)
+            end
+        end
+    end
+    return c
+end
+
+
 --- the default channel map: live at boot and after midi.reset()
 function M.defaults()
     M.ch = {}
@@ -326,6 +387,8 @@ end
 function M.reset()
     M.receive = nil
     M.clk = nil
+    M.capture()
+    M.cv_cc()
     M.owner = {}
     M.defaults()
 end

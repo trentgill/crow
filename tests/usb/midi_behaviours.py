@@ -144,6 +144,45 @@ def main():
     check(near(run, 5.0, 0.1) and near(stopped, 0.0, 0.05), "run gate %.2f V playing, %.2f V stopped" % (run or 0, stopped or 0))
     c.lua("input[1].mode('none') midi.clock()")
 
+    print("note capture: out1 (v8) -> in1, out2 (gate) -> in2, notes back on ch 9")
+    rfd = os.open("/dev/snd/midiC%sD0" % port.split(":")[1].split(",")[0], os.O_RDONLY | os.O_NONBLOCK)
+    def drain():
+        got = b""
+        while True:
+            try:
+                d = os.read(rfd, 256)
+            except BlockingIOError:
+                return got
+            if not d: return got
+            got += d
+    c.lua("midi.ch[1] = nil midi.ch[3] = nil midi.ch[5] = nil") # this test drives the jacks itself
+    c.lua("midi.capture{ v8 = 1, gate = 2, ch = 9, delay = 0.005 }")
+    drain()
+    want = []
+    for note in (60, 67, 48, 72):
+        want += [0x98, note, 100, 0x88, note, 0]
+        # the gate rises first and the pitch arrives 2 ms later: the delay covers it
+        c.lua("output[2].volts = 5 clock.run(function() clock.sleep(0.002) output[1].volts = %f end)" % ((note - 60) / 12), 0.1)
+        c.lua("output[2].volts = 0", 0.1)
+    got = list(drain())
+    check(got == want, "4 notes captured: %s" % " ".join("%02X" % b for b in got))
+    c.lua("midi.capture()")
+
+    print("CV to CC: in1 -> CC 20 on ch 2 (0..10 V)")
+    c.lua("midi.cv_cc{ input = 1, ch = 2, cc = 20, rate = 0.005 }")
+    time.sleep(0.2); drain()
+    c.lua("output[1].volts = 5", 0.3)
+    got = list(drain())
+    check(got[-3:] == [0xB1, 20, 64] if len(got) >= 3 else False, "5 V -> CC 20 = %s" % (got[-1] if got else None))
+    time.sleep(0.5)
+    quiet = drain()
+    check(len(quiet) == 0, "a still input sends nothing (%d bytes in 0.5 s)" % len(quiet))
+    c.lua("output[1].action = lfo(0.5, 5) output[1]()", 1.0)
+    moving = drain()
+    check(len(moving) > 30, "a moving input streams CCs (%d messages in 1 s)" % (len(moving) // 3))
+    c.lua("midi.cv_cc() output[1].volts = 0")
+    os.close(rfd)
+
     print("ch16 raw handler")
     r = c.lua("midi.ch[16] = function(s,a,b) print('raw',s,a,b) end")
     c.s.reset_input_buffer(); send(port, 0x9F, 1, 2); time.sleep(0.1)
