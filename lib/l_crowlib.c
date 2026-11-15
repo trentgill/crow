@@ -63,6 +63,7 @@ void l_crowlib_init(lua_State* L){
 	_load_lib(L, "quote", "quote");
 	_load_lib(L, "timeline", "timeline");
 	_load_lib(L, "hotswap", "hotswap");
+	_load_lib(L, "midi", "midi"); // after output & asl: it builds actions
 
 
 	//////// crow.reset
@@ -289,11 +290,11 @@ int l_crowlib_crow_reset( lua_State* L ){
     lua_call(L, 0, 0);
     lua_settop(L, 0);
 
-    // midi.receive = nil
+    // midi.reset() -- the default channel map, no receive handler
     lua_getglobal(L, "midi"); // @1
     if(lua_istable(L, 1)){
-        lua_pushnil(L);
-        lua_setfield(L, 1, "receive");
+        lua_getfield(L, 1, "reset");
+        lua_call(L, 0, 0);
     }
     lua_settop(L, 0);
 

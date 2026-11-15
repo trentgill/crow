@@ -15,9 +15,3 @@ end
 -- usb.audio(true) re-enumerates crow as serial + MIDI + a 4 out, 2 in soundcard.
 -- usb.audio() reads the mode.
 usb = { audio = usb_audio_mode }
-
---- midi (usb)
--- midi.receive = function(status, data1, data2) ... end
--- midi.send(status, [data1], [data2])
-midi = { send = usb_midi_send }
-function midi_handler(...) if midi.receive then midi.receive(...) end end

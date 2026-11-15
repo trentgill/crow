@@ -171,6 +171,7 @@ LUA_SRC += lua/quote.lua
 LUA_SRC += lua/sequins.lua
 LUA_SRC += lua/timeline.lua
 LUA_SRC += lua/hotswap.lua
+LUA_SRC += lua/midi.lua
 
 LUA_PP = $(LUA_SRC:%.lua=%.lua.h)
 LUA_PP: $(LUA_SRC)
