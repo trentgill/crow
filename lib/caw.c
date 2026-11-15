@@ -14,12 +14,12 @@ static uint32_t pReader = 0;
 void Caw_Init( void )
 {
     for( int i=0; i<USB_RX_BUFFER; i++ ){ reader[i] = 0; }
-    USB_CDC_Init();
+    USB_Init();
 }
 
 void Caw_DeInit( void )
 {
-    USB_CDC_DeInit();
+    USB_DeInit();
 }
 
 // each of the send functions below queues one message: it reaches the host

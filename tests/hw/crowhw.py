@@ -147,11 +147,20 @@ class Crow:
                               capture_output=True, text=True, timeout=timeout)
 
     def reset(self, settle=True):
-        """Hardware reset. Returns seconds until the USB port reappeared."""
-        self.close()
-        r = self.stflash("reset")
-        if r.returncode:
-            raise RuntimeError("st-flash reset failed:\n" + r.stderr[-400:])
+        """Hardware reset. Returns seconds until the USB port reappeared.
+        With CROW_STLINK=none (a crow with no probe) it's a software reset
+        (^^r) instead, which a crashed crow won't answer."""
+        if os.environ.get("CROW_STLINK") == "none":
+            if not self.ser:
+                self.open()
+            self.ser.write(b"\x1b^^r\n")
+            time.sleep(0.05)
+            self.close()
+        else:
+            self.close()
+            r = self.stflash("reset")
+            if r.returncode:
+                raise RuntimeError("st-flash reset failed:\n" + r.stderr[-400:])
         _, dt = self.wait_port(gone_first=True)
         self.open(settle=settle)
         self._boot_text()

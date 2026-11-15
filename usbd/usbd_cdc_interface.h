@@ -50,13 +50,13 @@
 #define __USBD_CDC_IF_H
 
 /* Includes ------------------------------------------------------------------*/
-#include "usbd_cdc.h"
+#include "cdc_acm/usbd_cdc_acm.h"
 #include "../ll/interrupts.h" // USB_IRQPriority
 
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
 
-extern USBD_CDC_ItfTypeDef  USBD_CDC_fops;
+extern USBD_CDC_ACM_ItfTypeDef  USBD_CDC_fops;
 
 void CDC_clear_buffers();
 

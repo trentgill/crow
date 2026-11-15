@@ -75,13 +75,13 @@
 // but gives up after this long without a transfer completing.
 #define TX_WAIT_MS          20
 
-static int8_t CDC_Itf_Init(void);
-static int8_t CDC_Itf_DeInit(void);
-static int8_t CDC_Itf_Control(uint8_t cmd, uint8_t* pbuf, uint16_t length);
-static int8_t CDC_Itf_Receive(uint8_t* pbuf, uint32_t *Len);
-static int8_t CDC_Itf_TransmitCplt(uint8_t *pbuf, uint32_t *Len, uint8_t epnum);
+static int8_t CDC_Itf_Init(uint8_t ch);
+static int8_t CDC_Itf_DeInit(uint8_t ch);
+static int8_t CDC_Itf_Control(uint8_t ch, uint8_t cmd, uint8_t* pbuf, uint16_t length);
+static int8_t CDC_Itf_Receive(uint8_t ch, uint8_t* pbuf, uint32_t *Len);
+static int8_t CDC_Itf_TransmitCplt(uint8_t ch, uint8_t *pbuf, uint32_t *Len, uint8_t epnum);
 
-USBD_CDC_ItfTypeDef USBD_CDC_fops = { CDC_Itf_Init
+USBD_CDC_ACM_ItfTypeDef USBD_CDC_fops = { CDC_Itf_Init
                                     , CDC_Itf_DeInit
                                     , CDC_Itf_Control
                                     , CDC_Itf_Receive
@@ -89,7 +89,7 @@ USBD_CDC_ItfTypeDef USBD_CDC_fops = { CDC_Itf_Init
                                     };
 
 // Private vars
-USBD_CDC_LineCodingTypeDef LineCoding = { 115200  // baud rate
+USBD_CDC_ACM_LineCodingTypeDef LineCoding = { 115200  // baud rate
                                         , 0x00    // stop bits-1
                                         , 0x00    // parity - none
                                         , 0x08    // nb. of bits 8
@@ -102,6 +102,7 @@ static uint8_t UserRxBuffer[RX_PACKET]; // where the endpoint receives
 static uint8_t           rx_ring[RX_RING_SIZE];
 static volatile uint32_t rx_head = 0;     // where the next packet is written
 static volatile uint32_t rx_tail = 0;     // the oldest packet
+static volatile uint8_t  cdc_open = 0;    // the host has configured the serial interface
 static volatile uint8_t  rx_stalled = 0;  // endpoint left un-armed: ring was full
 static volatile uint32_t rx_last_tick = 0; // last arrival, or re-arm after a stall
 
@@ -145,9 +146,10 @@ void CDC_clear_buffers( void )
 
 #include "../ll/status_led.h" // increase LED blink speed when USB connected
 /* Private functions ---------------------------------------------------------*/
-static int8_t CDC_Itf_Init(void)
+static int8_t CDC_Itf_Init(uint8_t ch)
 {
-    USBD_CDC_SetRxBuffer(&USBD_Device, UserRxBuffer);
+    UNUSED(ch);
+    USBD_CDC_SetRxBuffer(0, &USBD_Device, UserRxBuffer);
 
     // nothing is sent for CONNECTION_DELAY after the host configures us.
     // solves ECHO issue on norns. see #137
@@ -165,6 +167,7 @@ static int8_t CDC_Itf_Init(void)
         tx_holdoff = 1;
         tx_in_flight = 0; // a fresh class handle has no transfer outstanding
         tx_in_flight_stream = 0;
+        cdc_open = 1;
     );
 
     //TODO add lua callback when USB connects/disconnects
@@ -175,11 +178,13 @@ static int8_t CDC_Itf_Init(void)
     return (USBD_OK);
 }
 
-static int8_t CDC_Itf_DeInit(void)
+static int8_t CDC_Itf_DeInit(uint8_t ch)
 {
+    UNUSED(ch);
     // the endpoint is closed, so a transfer still on the wire will never
     // complete. its bytes stay queued and are sent on the next configure.
     BLOCK_IRQS(
+        cdc_open = 0;
         rx_stalled = 0; // the endpoint is closed. Init arms it again
         tx_in_flight = 0;
         tx_in_flight_stream = 0;
@@ -189,8 +194,9 @@ static int8_t CDC_Itf_DeInit(void)
     return (USBD_OK);
 }
 
-static int8_t CDC_Itf_Control (uint8_t cmd, uint8_t* pbuf, uint16_t length)
+static int8_t CDC_Itf_Control (uint8_t ch, uint8_t cmd, uint8_t* pbuf, uint16_t length)
 {
+    UNUSED(ch);
     // Most of this is unimplemented!
     switch( cmd ){
         case CDC_SEND_ENCAPSULATED_COMMAND: printf("itf:send_cmd\n");     break;
@@ -230,7 +236,7 @@ static int8_t CDC_Itf_Control (uint8_t cmd, uint8_t* pbuf, uint16_t length)
 // caller has interrupts blocked, or is the OTG interrupt
 static uint8_t tx_link_ready( void )
 {
-    if( USBD_Device.pClassData == NULL
+    if( !cdc_open
      || USBD_Device.dev_state != USBD_STATE_CONFIGURED ){ return 0; }
     if( tx_holdoff ){
         if( (HAL_GetTick() - tx_connect_tick) < CONNECTION_DELAY ){ return 0; }
@@ -292,8 +298,8 @@ static void tx_kick_locked( void )
     tx_in_flight = len;
     tx_in_flight_stream = from_stream;
     tx_started = HAL_GetTick();
-    USBD_CDC_SetTxBuffer( &USBD_Device, (uint8_t*)src, len );
-    if( USBD_CDC_TransmitPacket( &USBD_Device ) != USBD_OK ){
+    USBD_CDC_SetTxBuffer( 0, &USBD_Device, (uint8_t*)src, len );
+    if( USBD_CDC_TransmitPacket( 0, &USBD_Device ) != USBD_OK ){
         tx_in_flight = 0; // nothing went out, so nothing will complete
         tx_in_flight_stream = 0;
     }
@@ -441,8 +447,9 @@ int USB_tx_is_ready( void )
     return ready;
 }
 
-static int8_t CDC_Itf_TransmitCplt(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
+static int8_t CDC_Itf_TransmitCplt(uint8_t ch, uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 {
+    UNUSED(ch);
     UNUSED(Buf);
     UNUSED(Len);
     UNUSED(epnum);
@@ -473,15 +480,16 @@ static void rx_arm_locked( void )
 {
     if( (RX_RING_SIZE - (rx_head - rx_tail)) >= 2 + RX_PACKET ){
         rx_stalled = 0;
-        USBD_CDC_ReceivePacket( &USBD_Device );
+        USBD_CDC_ReceivePacket( 0, &USBD_Device );
     } else {
         rx_stalled = 1;
     }
 }
 
 // on interrupt add the packet to the ring
-static int8_t CDC_Itf_Receive( uint8_t* buf, uint32_t *len )
+static int8_t CDC_Itf_Receive( uint8_t ch, uint8_t* buf, uint32_t *len )
 {
+    UNUSED(ch);
     uint32_t length = *len;
     Telemetry_count( TM_rx_bytes, length );
     if( length > RX_PACKET ){ length = RX_PACKET; } // not at full speed
@@ -524,7 +532,7 @@ uint32_t USB_rx_dequeue( uint8_t* buf, uint8_t* gap )
 void USB_rx_rearm( void )
 {
     BLOCK_IRQS(
-        if( rx_stalled && USBD_Device.pClassData != NULL ){
+        if( rx_stalled && cdc_open ){
             rx_arm_locked();
             // the host could not send until now: count the wait from here
             if( !rx_stalled ){ rx_last_tick = HAL_GetTick(); }

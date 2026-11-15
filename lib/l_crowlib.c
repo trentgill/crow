@@ -9,6 +9,7 @@
 #include "lib/ashapes.h"    // AShaper_get_state
 #include "lib/caw.h"        // Caw_printf()
 #include "lib/io.h"         // IO_GetADC()
+#include "lib/usb_audio.h"  // USB_Audio_SetOutput()
 
 #define L_CL_MIDDLEC 		(261.63f)
 #define L_CL_MIDDLEC_INV 	(1.0f/L_CL_MIDDLEC)
@@ -62,6 +63,7 @@ void l_crowlib_init(lua_State* L){
 	_load_lib(L, "quote", "quote");
 	_load_lib(L, "timeline", "timeline");
 	_load_lib(L, "hotswap", "hotswap");
+	_load_lib(L, "midi", "midi"); // after output & asl: it builds actions
 
 
 	//////// crow.reset
@@ -287,6 +289,18 @@ int l_crowlib_crow_reset( lua_State* L ){
     lua_getfield(L, 1, "cleanup");
     lua_call(L, 0, 0);
     lua_settop(L, 0);
+
+    // midi.reset() -- the default channel map, no receive handler
+    lua_getglobal(L, "midi"); // @1
+    if(lua_istable(L, 1)){
+        lua_getfield(L, 1, "reset");
+        lua_call(L, 0, 0);
+    }
+    lua_settop(L, 0);
+
+    // outputs follow the usb audio stream again (setting volts above took
+    // them). only does anything in audio mode
+    for(int i=0; i<4; i++){ USB_Audio_SetOutput(i, 1); }
 
     return 0;
 }

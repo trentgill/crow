@@ -10,6 +10,7 @@
 #include "metro.h"
 #include "caw.h"
 #include "casl.h"
+#include "usb_audio.h"        // USB_Audio_BlockOut(), USB_Audio_BlockIn()
 
 #include "lualink.h"           // L_handle_in_stream (pass this in as ptr?)
 
@@ -55,6 +56,8 @@ IO_block_t* IO_BlockProcess( IO_block_t* b )
                  , b->size
                  );
     }
+    USB_Audio_BlockOut( b ); // outputs given to the host stream
+    USB_Audio_BlockIn( b );  // inputs to the host, beside Lua's input modes
     public_update();
     return b;
 }

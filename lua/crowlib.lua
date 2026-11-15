@@ -10,3 +10,8 @@ print = function(...)
     end
     print_serial(tostring(printResult))
 end
+
+--- usb
+-- usb.audio(true) re-enumerates crow as serial + MIDI + a 4 out, 2 in soundcard.
+-- usb.audio() reads the mode.
+usb = { audio = usb_audio_mode }

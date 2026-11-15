@@ -93,6 +93,17 @@ void DAC_Start(void)
     if(error){ printf("i2s failed to start\n"); }
 }
 
+// the sample frame the DMA is reading now, 0 .. 2*bsize-1 across both halves.
+// lib/usb_audio.c times the DAC clock against USB frames with it
+uint16_t DAC_GetFrame( void )
+{
+    uint32_t size = dac_i2s.TxXferSize; // DMA items in the whole ring
+    if( size == 0 || dac_i2s.hdmatx == NULL ){ return 0; } // not started
+    uint32_t done = size - __HAL_DMA_GET_COUNTER( dac_i2s.hdmatx );
+    uint32_t frames = samp_count / ADDA_DAC_CHAN_COUNT;
+    return (uint16_t)((done / (size / frames)) % frames);
+}
+
 void DAC_CalibrateScalar( uint8_t channel, float scale )
 {
     dac_calibrated_scalar[channel] = DAC_V_TO_U16 * scale;

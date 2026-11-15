@@ -37,6 +37,9 @@
 #include "l_crowlib.h"
 #include "telemetry.h"
 #include "adc_dbg.h"
+#include "../usbd/usbd_main.h" // USB_set_audio_mode()
+#include "../usbd/usbd_midi_interface.h" // USB_midi_send()
+#include "lib/usb_audio.h" // USB_Audio_SetOutput()
 
 
 // Basic crow script
@@ -516,6 +519,71 @@ static int _send_usb( lua_State *L )
     return 0;
 }
 
+// usb_audio_mode( [on] ) -> mode. without an argument, just reads it
+static int _usb_audio_mode( lua_State *L )
+{
+    if( !lua_isnoneornil(L, 1) ){
+        USB_set_audio_mode( lua_toboolean(L, 1) );
+    }
+    lua_settop(L, 0);
+    lua_pushboolean(L, USB_get_audio_mode());
+    return 1;
+}
+
+// usb_audio_output( chan, [usb] ) -> usb. a jack follows the USB stream or Lua
+static int _usb_audio_output( lua_State *L )
+{
+    int ch = luaL_checkinteger(L, 1) - 1;
+    if( ch < 0 || ch > 3 ){ return luaL_error(L, "no output %d", ch+1); }
+    if( !lua_isnoneornil(L, 2) ){
+        USB_Audio_SetOutput( ch, lua_toboolean(L, 2) );
+    }
+    lua_settop(L, 0);
+    lua_pushboolean(L, USB_Audio_GetOutput(ch));
+    return 1;
+}
+
+// usb_audio_loopback( on ): test mode, the IN stream carries outputs 1 & 2
+static int _usb_audio_loopback( lua_State *L )
+{
+    USB_Audio_Loopback( lua_toboolean(L, 1) );
+    lua_settop(L, 0);
+    return 0;
+}
+
+// usb_audio_stats( ['reset'] ) -> table of the audio stream's counters & state
+static int _usb_audio_stats( lua_State *L )
+{
+    if( lua_isstring(L, 1) ){ USB_Audio_StatsReset(); }
+    USB_Audio_Stats_t st;
+    USB_Audio_Stats( &st );
+    lua_settop(L, 0);
+    lua_newtable(L);
+#define SETI(k) lua_pushinteger(L, st.k); lua_setfield(L, -2, #k)
+    SETI(out_underruns); SETI(out_overruns); SETI(in_overruns); SETI(in_underruns);
+    SETI(iso_in_missed); SETI(iso_out_missed); SETI(out_packets); SETI(in_packets);
+    SETI(fb_rejected); SETI(out_fill); SETI(in_fill);
+    SETI(out_streaming); SETI(out_playing); SETI(in_streaming);
+#undef SETI
+    lua_pushnumber(L, st.feedback / 16384.0); lua_setfield(L, -2, "feedback");
+    lua_pushnumber(L, st.rate / 65536.0); lua_setfield(L, -2, "rate");
+    return 1;
+}
+
+// usb_midi_send( status, [data1], [data2] ) -> sent
+static int _usb_midi_send( lua_State *L )
+{
+    uint8_t msg[3];
+    int n = lua_gettop(L);
+    if( n < 1 || n > 3 ){ return luaL_error(L, "midi messages are 1 to 3 bytes"); }
+    for( int i=0; i<n; i++ ){
+        msg[i] = (uint8_t)luaL_checkinteger(L, i+1);
+    }
+    lua_settop(L, 0);
+    lua_pushboolean(L, USB_midi_send(msg, n));
+    return 1;
+}
+
 static int _ii_list_modules( lua_State *L )
 {
     Caw_send_luachunk( (char*)ii_list_modules() );
@@ -921,6 +989,11 @@ static const struct luaL_Reg libCrow[]=
     , { "casl_getdynamic"  , _casl_getdynamic  }
         // usb
     , { "send_usb"         , _send_usb         }
+    , { "usb_audio_mode"   , _usb_audio_mode   }
+    , { "usb_audio_output" , _usb_audio_output }
+    , { "usb_midi_send"    , _usb_midi_send    }
+    , { "usb_audio_stats"  , _usb_audio_stats  }
+    , { "usb_audio_loopback", _usb_audio_loopback }
         // i2c
     , { "ii_list_modules"  , _ii_list_modules  }
     , { "ii_list_commands" , _ii_list_commands }
@@ -1347,6 +1420,24 @@ void L_handle_tempo_change( event_t* e )
     lua_getglobal(L, "tempo_change_handler");
     lua_pushnumber(L, e->data.f);
     if( Lua_call_usercode(L, 1, 0) != LUA_OK ){
+        lua_pop( L, 1 );
+    }
+}
+
+// called straight from the main loop (not through the event queue), so a
+// burst waits in the USB receive ring, and the host is held off, rather than
+// overflowing the queue
+void L_handle_midi( const uint8_t* msg, uint8_t len )
+{
+    lua_getglobal(L, "midi_handler");
+    if( !lua_isfunction(L, -1) ){ // no MIDI library loaded: nothing to do
+        lua_pop( L, 1 );
+        return;
+    }
+    for( int i=0; i<len; i++ ){
+        lua_pushinteger(L, msg[i]);
+    }
+    if( Lua_call_usercode(L, len, 0) != LUA_OK ){
         lua_pop( L, 1 );
     }
 }

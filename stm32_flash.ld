@@ -34,7 +34,8 @@ ENTRY(Reset_Handler)
  *
  * DTCM  0x20000000  64K   wired straight to the core: no bus wait, never cached,
  *                         and reachable by DMA. holds the stack & every static.
- * SRAM  0x20010000  192K  SRAM1 + SRAM2. all of it is the heap (lua).
+ * SRAM  0x20010000  192K  SRAM1 + SRAM2. a few KB of USB buffers (.sram_noinit),
+ *                         then all the rest is the heap (lua).
  *
  * The stack sits at the very bottom of RAM and grows down, so running out of
  * it faults on the unmapped space below 0x20000000 instead of quietly
@@ -176,8 +177,20 @@ SECTIONS
     __bss_end__ = _ebss;
   } >DTCM
 
+  /* Buffers that are big, only touched by the CPU and set up by their owner
+     before use (USB packet rings), mark themselves SRAM_NOINIT to stay out of
+     DTCM. Not zeroed by the startup code. The heap starts after them. */
+  .sram_noinit (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.sram_noinit)
+    *(.sram_noinit*)
+    . = ALIGN(4);
+    _esram_noinit = .;
+  } >SRAM
+
   /* the heap: see _sbrk() in syscalls.c */
-  _sheap = ORIGIN(SRAM);
+  _sheap = _esram_noinit;
   _eheap = ORIGIN(SRAM) + LENGTH(SRAM);
 
   

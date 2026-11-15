@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""MIDI behaviours on a real crow, out1 -> in1 and out2 -> in2 patched.
+
+    python3 tests/usb/midi_behaviours.py --serial 206135773756
+
+Sends MIDI from ALSA (amidi) on the default channel map and reads the
+voltages back through crow's own inputs over the serial port.
+"""
+import argparse, os, subprocess, sys, time
+import usb.core, serial
+sys.path.insert(0, __import__("os").path.dirname(__file__))
+from check import find_dev, midi_port, serial_port
+
+ok = True
+def check(cond, what):
+    global ok
+    print(("  ok   " if cond else "  FAIL ") + what)
+    ok = ok and bool(cond)
+
+class Crow:
+    def __init__(self, sn):
+        self.s = serial.Serial(serial_port(sn), 115200, timeout=0.2)
+        self.s.write(b"\x1b"); time.sleep(0.1); self.s.reset_input_buffer()
+    def lua(self, line, wait=0.15):
+        self.s.reset_input_buffer()
+        self.s.write(line.encode() + b"\n"); time.sleep(wait)
+        return self.s.read(self.s.in_waiting or 1).decode(errors="replace").strip()
+    def ins(self):
+        r = self.lua("print(input[1].volts, input[2].volts)")
+        try:
+            a, b = r.split()[:2]; return float(a), float(b)
+        except ValueError:
+            return None, None
+
+_fd = {}
+def send(port, *msg):
+    """straight to the rawmidi device: amidi -S can sit on a message ~30 ms"""
+    if port not in _fd:
+        card = port.split(":")[1].split(",")[0]
+        _fd[port] = os.open("/dev/snd/midiC%sD0" % card, os.O_WRONLY)
+    os.write(_fd[port], bytes(msg))
+
+def near(v, want, tol=0.05):
+    return v is not None and abs(v - want) <= tol
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--serial", required=True)
+    a = ap.parse_args()
+    dev = find_dev(a.serial)
+    port = midi_port(dev)
+    c = Crow(a.serial)
+    c.lua("midi.reset()")
+
+    print("ch1: trigger voice on out1 (v8) + out2 (env)")
+    for note, v in ((60, 0.0), (72, 1.0), (48, -1.0), (67, 7 / 12)):
+        send(port, 0x90, note, 127); time.sleep(0.05)
+        v1, _ = c.ins()
+        check(near(v1, v, 0.02), "note %d -> %.3f V (want %.3f)" % (note, v1 or 0, v))
+        send(port, 0x80, note, 0)
+    send(port, 0xB0, 75, 127)  # decay 10 s, so REPL reads can follow it
+    send(port, 0x90, 60, 127); time.sleep(0.02) # serial can overtake MIDI on the bus
+    _, e0 = c.ins()
+    time.sleep(1.0); _, e1 = c.ins()
+    check(e0 is not None and e0 > 4.0 and 0.1 < e1 < e0 * 0.8,
+          "env decays: %.2f V just after, %.2f V a second later" % (e0 or 0, e1 or 0))
+    send(port, 0x80, 60, 0)
+    send(port, 0xB0, 75, 64)
+    send(port, 0xE0, 0x7F, 0x7F); time.sleep(0.05)  # bend full up
+    send(port, 0x90, 60, 100); time.sleep(0.05)
+    v1, _ = c.ins()
+    check(near(v1, 2 / 12 * 8191 / 8192, 0.02), "pitch bend +2 st -> %.3f V" % (v1 or 0))
+    send(port, 0xE0, 0x00, 0x40); send(port, 0x80, 60, 0)
+    # last-note priority
+    send(port, 0x90, 60, 100); send(port, 0x90, 64, 100); time.sleep(0.05)
+    v_hi, _ = c.ins()
+    send(port, 0x80, 64, 0); time.sleep(0.05)
+    v_back, _ = c.ins()
+    check(near(v_hi, 4 / 12, 0.02) and near(v_back, 0.0, 0.02), "last note wins, falls back: %.3f then %.3f V" % (v_hi or 0, v_back or 0))
+    send(port, 0x80, 60, 0)
+
+    print("ch3: ADSR voice on out1/out2 (takes the jacks from ch1)")
+    send(port, 0xB2, 73, 0); send(port, 0xB2, 75, 0)  # fastest attack & decay
+    send(port, 0x92, 62, 127); time.sleep(0.2)
+    v1, held = c.ins()
+    check(near(v1, 2 / 12, 0.02), "note 62 -> %.3f V" % (v1 or 0))
+    check(near(held, 5.0, 0.15), "sustain while held: %.2f V (want 5)" % (held or 0))
+    send(port, 0x82, 62, 0); time.sleep(0.1)
+    send(port, 0xB2, 79, 64)  # sustain for the next note
+    send(port, 0x92, 62, 127); time.sleep(0.2)
+    _, held = c.ins()
+    check(near(held, 64 * 8 / 127, 0.15), "CC 79 sets the next note's sustain: %.2f V (want %.2f)" % (held or 0, 64 * 8 / 127))
+    send(port, 0x82, 62, 0); time.sleep(1.5)
+    _, rel = c.ins()
+    check(near(rel, 0.0, 0.05), "released: %.3f V" % (rel or 0))
+
+    print("ch4: CC 16/17 -> out1/out2")
+    for val in (0, 64, 127):
+        send(port, 0xB3, 16, val); send(port, 0xB3, 17, 127 - val); time.sleep(0.05)
+        v1, v2 = c.ins()
+        check(near(v1, val * 10 / 127, 0.05) and near(v2, (127 - val) * 10 / 127, 0.05),
+              "CC16=%d CC17=%d -> %.3f / %.3f V" % (val, 127 - val, v1 or 0, v2 or 0))
+
+    print("ch5: voice + velocity: out1 v8, out2 env")
+    send(port, 0x94, 69, 64); time.sleep(0.05)
+    v1, _ = c.ins()
+    check(near(v1, 9 / 12, 0.02), "note 69 -> %.3f V" % (v1 or 0))
+    send(port, 0x84, 69, 0)
+
+    print("ch6: duophonic, round robin over out1/2 and out3/4")
+    send(port, 0x95, 72, 100); time.sleep(0.05)
+    v_a, _ = c.ins()
+    send(port, 0x95, 48, 100); time.sleep(0.05)
+    v_b, _ = c.ins()
+    check(near(v_a, 1.0, 0.02) and near(v_b, 1.0, 0.02),
+          "1st note on out1 (%.3f V), 2nd goes to out3, out1 holds (%.3f V)" % (v_a or 0, v_b or 0))
+    send(port, 0x85, 72, 0); send(port, 0x85, 48, 0); time.sleep(0.05)
+    send(port, 0x95, 60, 100); time.sleep(0.05)
+    v_c, _ = c.ins()
+    check(near(v_c, 0.0, 0.02), "with both free, the next note is back on out1: %.3f V" % (v_c or 0))
+    send(port, 0x85, 60, 0)
+
+    print("ch10: drum triggers (kick -> out1)")
+    c.lua("_k = 0 input[1].mode('change', 2, 0.5, 'rising') input[1].change = function() _k = _k + 1 end")
+    for _ in range(5):
+        send(port, 0x99, 36, 127); time.sleep(0.05)
+    send(port, 0x99, 38, 127); time.sleep(0.05) # snare is out2: not counted
+    r = c.lua("print(_k)")
+    check(r.strip() == "5", "5 kicks -> %s rising edges on in1" % r.strip())
+    c.lua("input[1].mode('none')")
+
+    print("clock: 16ths on out1, run gate on out2")
+    c.lua("midi.clock{ out = 1, div = 6, run = 2 }")
+    c.lua("_k = 0 input[1].mode('change', 2, 0.5, 'rising') input[1].change = function() _k = _k + 1 end")
+    for _ in range(24): send(port, 0xF8); time.sleep(0.004) # stopped: nothing
+    r0 = c.lua("print(_k)")
+    send(port, 0xFA); time.sleep(0.05)
+    _, run = c.ins()
+    for _ in range(96): send(port, 0xF8); time.sleep(0.0208) # one bar at 120 BPM
+    time.sleep(0.05)
+    r1 = c.lua("print(_k)")
+    send(port, 0xFC); time.sleep(0.05)
+    _, stopped = c.ins()
+    check(r0.strip() == "0" and r1.strip() == "16", "no pulses while stopped (%s), 16 in a bar after start (%s)" % (r0.strip(), r1.strip()))
+    check(near(run, 5.0, 0.1) and near(stopped, 0.0, 0.05), "run gate %.2f V playing, %.2f V stopped" % (run or 0, stopped or 0))
+    c.lua("input[1].mode('none') midi.clock()")
+
+    print("note capture: out1 (v8) -> in1, out2 (gate) -> in2, notes back on ch 9")
+    rfd = os.open("/dev/snd/midiC%sD0" % port.split(":")[1].split(",")[0], os.O_RDONLY | os.O_NONBLOCK)
+    def drain():
+        got = b""
+        while True:
+            try:
+                d = os.read(rfd, 256)
+            except BlockingIOError:
+                return got
+            if not d: return got
+            got += d
+    c.lua("midi.ch[1] = nil midi.ch[3] = nil midi.ch[5] = nil") # this test drives the jacks itself
+    c.lua("midi.capture{ v8 = 1, gate = 2, ch = 9, delay = 0.005 }")
+    drain()
+    want = []
+    for note in (60, 67, 48, 72):
+        want += [0x98, note, 100, 0x88, note, 0]
+        # the gate rises first and the pitch arrives 2 ms later: the delay covers it
+        c.lua("output[2].volts = 5 clock.run(function() clock.sleep(0.002) output[1].volts = %f end)" % ((note - 60) / 12), 0.1)
+        c.lua("output[2].volts = 0", 0.1)
+    got = list(drain())
+    check(got == want, "4 notes captured: %s" % " ".join("%02X" % b for b in got))
+    c.lua("midi.capture()")
+
+    print("CV to CC: in1 -> CC 20 on ch 2 (0..10 V)")
+    c.lua("midi.cv_cc{ input = 1, ch = 2, cc = 20, rate = 0.005 }")
+    time.sleep(0.2); drain()
+    c.lua("output[1].volts = 5", 0.3)
+    got = list(drain())
+    check(got[-3:] == [0xB1, 20, 64] if len(got) >= 3 else False, "5 V -> CC 20 = %s" % (got[-1] if got else None))
+    time.sleep(0.5)
+    quiet = drain()
+    check(len(quiet) == 0, "a still input sends nothing (%d bytes in 0.5 s)" % len(quiet))
+    c.lua("output[1].action = lfo(0.5, 5) output[1]()", 1.0)
+    moving = drain()
+    check(len(moving) > 30, "a moving input streams CCs (%d messages in 1 s)" % (len(moving) // 3))
+    c.lua("midi.cv_cc() output[1].volts = 0")
+    os.close(rfd)
+
+    print("ch16 configuration")
+    c.lua("midi.reset()")
+    def cc16(n, v): send(port, 0xBF, n, v)
+    # clock on out1 (16ths), run gate on out2, from CCs alone
+    cc16(20, 1); cc16(21, 6); cc16(22, 2); time.sleep(0.05)
+    r = c.lua("print(midi.clk and midi.clk.out, midi.clk and midi.clk.div, midi.clk and midi.clk.run)")
+    check(r.split() == ["1", "6", "2"], "CC 20/21/22 -> clock out 1, div 6, run 2: %r" % r)
+    cc16(20, 0); cc16(22, 0); time.sleep(0.05)
+    r = c.lua("print(midi.clk)")
+    check(r.strip() == "nil", "CC 20/22 = 0 turns the clock off: %r" % r)
+    # NRPN: channel 12 becomes an ADSR voice on jacks 3+4, then a trigger voice on 1+2
+    for n, v in ((99, 2), (98, 12), (6, 3), (99, 1), (98, 12), (6, 2)): cc16(n, v)
+    time.sleep(0.05)
+    r = c.lua("print(midi.ch[12].env, midi.ch[12].v8, midi.ch[12].gate)")
+    check(r.split() == ["adsr", "3", "4"], "NRPN 1/12 = 2, 2/12 = 3 -> ADSR voice on 3+4: %r" % r)
+    for n, v in ((99, 2), (98, 12), (6, 1), (99, 1), (98, 12), (6, 1)): cc16(n, v)
+    time.sleep(0.05)
+    send(port, 0x9B, 72, 100); time.sleep(0.05)
+    v1, _ = c.ins()
+    check(near(v1, 1.0, 0.02), "channel 12 now plays out1: note 72 -> %.3f V" % (v1 or 0))
+    send(port, 0x8B, 72, 0)
+    # capture & CV to CC switch on from CCs
+    cc16(24, 9); cc16(25, 5); time.sleep(0.05)
+    r = c.lua("print(midi.cap and midi.cap.ch, midi.cap and midi.cap.delay)")
+    check(r.split() == ["9", "0.005"], "CC 24/25 -> capture on ch 9, 5 ms delay: %r" % r)
+    cc16(24, 0); cc16(28, 3); cc16(26, 21); time.sleep(0.05)
+    r = c.lua("print(midi.cvcc[1] and midi.cvcc[1].ch, midi.cvcc[1] and midi.cvcc[1].cc)")
+    check(r.split() == ["3", "21"], "CC 28/26 -> in1 sends CC 21 on ch 3: %r" % r)
+    cc16(26, 0); time.sleep(0.05)
+    r = c.lua("print(midi.cvcc[1] == nil, midi.cap == nil)")
+    check(r.split() == ["true", "true"], "CC 26/24 = 0 turn them off: %r" % r)
+    send(port, 0xCF, 120); time.sleep(0.05)
+    r = c.lua("print(midi.ch[12], midi.ch[1].env)")
+    check(r.split() == ["nil", "trig"], "PC 120 restores the default map: %r" % r)
+
+    print("ch16 raw handler")
+    r = c.lua("midi.ch[16] = function(s,a,b) print('raw',s,a,b) end")
+    c.s.reset_input_buffer(); send(port, 0x9F, 1, 2); time.sleep(0.1)
+    r = c.s.read(c.s.in_waiting or 1).decode(errors="replace")
+    check("raw\t159\t1\t2" in r, "midi.ch[16] function gets the message: %r" % r.strip())
+    c.lua("midi.reset()")
+    print("PASS" if ok else "FAIL")
+    return 0 if ok else 1
+
+if __name__ == "__main__":
+    sys.exit(main())

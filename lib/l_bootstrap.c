@@ -21,6 +21,7 @@
 #include "build/quote.h"
 #include "build/timeline.h"
 #include "build/hotswap.h"
+#include "build/midi.h"
 
 // #include "build/ii_lualink.h" // generated C header for linking to lua
 
@@ -51,6 +52,7 @@ const struct lua_lib_locator Lua_libs[] =
     , { "lua_quote"     , build_quote_lc     , true, build_quote_lc_len}
     , { "lua_timeline"  , build_timeline_lc  , true, build_timeline_lc_len}
     , { "lua_hotswap"   , build_hotswap_lc   , true, build_hotswap_lc_len}
+    , { "lua_midi"      , build_midi_lc      , true, build_midi_lc_len}
     , { NULL            , NULL               , true, 0}
     };
 
