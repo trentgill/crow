@@ -258,6 +258,57 @@ function II:note_off(n)
 end
 
 
+--- clock: MIDI clock & transport to jacks. realtime messages have no channel,
+-- so there's one of these, in midi.clk
+-- options: out (pulse jack), div (MIDI clocks per pulse: 6 = 16ths, 24 =
+--          quarters), length (s), level (V), run (jack), run_mode ('gate': high
+--          while playing | 'trig': a pulse on start), free (pulse while stopped)
+local Clock = {}
+Clock.__index = Clock
+
+function M.clock(t)
+    if not t then M.clk = nil; return end
+    local c = { out = t.out, div = t.div or 6, length = t.length or 0.005, level = t.level or 5
+              , run = t.run, run_mode = t.run_mode or 'gate', free = t.free
+              , count = 0, running = false }
+    M.clk = setmetatable(c, Clock)
+    return M.clk
+end
+
+function Clock:claim(o)
+    if o == self.out or self.run_mode == 'trig' then
+        output[o].action = { to(self.level, self.length, 'now'), to(0, 0) }
+    end
+end
+
+function Clock:tick()
+    if not (self.running or self.free) then return end
+    if self.out and self.count % self.div == 0 then
+        take(self, self.out)
+        output[self.out]()
+    end
+    self.count = self.count + 1
+end
+
+function Clock:transport(play, from_start)
+    if from_start then self.count = 0 end -- divisions line up with the bar
+    self.running = play
+    if not self.run then return end
+    take(self, self.run)
+    if self.run_mode == 'trig' then
+        if play and from_start then output[self.run]() end
+    else
+        output[self.run].volts = play and self.level or 0
+    end
+end
+
+local realtime = { [0xF8] = function(c) c:tick() end
+                 , [0xFA] = function(c) c:transport(true, true) end  -- start
+                 , [0xFB] = function(c) c:transport(true, false) end -- continue
+                 , [0xFC] = function(c) c:transport(false) end       -- stop
+                 }
+
+
 --- the default channel map: live at boot and after midi.reset()
 function M.defaults()
     M.ch = {}
@@ -274,6 +325,7 @@ end
 
 function M.reset()
     M.receive = nil
+    M.clk = nil
     M.owner = {}
     M.defaults()
 end
@@ -282,7 +334,11 @@ end
 --- dispatch: called by crow for every message from the host
 function midi_handler(st, d1, d2)
     if M.receive then M.receive(st, d1, d2) end
-    if st >= 0xF0 then return end -- system & realtime: no channel
+    if st >= 0xF0 then -- system & realtime: no channel
+        local f = realtime[st]
+        if f and M.clk then f(M.clk) end
+        return
+    end
     local b = M.ch[(st & 0x0F) + 1]
     if not b then return end
     if type(b) == 'function' then return b(st, d1, d2) end

@@ -128,6 +128,22 @@ def main():
     check(r.strip() == "5", "5 kicks -> %s rising edges on in1" % r.strip())
     c.lua("input[1].mode('none')")
 
+    print("clock: 16ths on out1, run gate on out2")
+    c.lua("midi.clock{ out = 1, div = 6, run = 2 }")
+    c.lua("_k = 0 input[1].mode('change', 2, 0.5, 'rising') input[1].change = function() _k = _k + 1 end")
+    for _ in range(24): send(port, 0xF8); time.sleep(0.004) # stopped: nothing
+    r0 = c.lua("print(_k)")
+    send(port, 0xFA); time.sleep(0.05)
+    _, run = c.ins()
+    for _ in range(96): send(port, 0xF8); time.sleep(0.0208) # one bar at 120 BPM
+    time.sleep(0.05)
+    r1 = c.lua("print(_k)")
+    send(port, 0xFC); time.sleep(0.05)
+    _, stopped = c.ins()
+    check(r0.strip() == "0" and r1.strip() == "16", "no pulses while stopped (%s), 16 in a bar after start (%s)" % (r0.strip(), r1.strip()))
+    check(near(run, 5.0, 0.1) and near(stopped, 0.0, 0.05), "run gate %.2f V playing, %.2f V stopped" % (run or 0, stopped or 0))
+    c.lua("input[1].mode('none') midi.clock()")
+
     print("ch16 raw handler")
     r = c.lua("midi.ch[16] = function(s,a,b) print('raw',s,a,b) end")
     c.s.reset_input_buffer(); send(port, 0x9F, 1, 2); time.sleep(0.1)
