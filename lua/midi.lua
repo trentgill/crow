@@ -233,6 +233,31 @@ function Drums:note_on(n, vel)
 end
 
 
+--- ii: notes to Just Friends or W/Syn
+-- options: level (V at velocity 127), off (send level 0 on note-off: for
+-- JF's sustain mode)
+local II = {}
+II.__index = II
+
+local function ii_voice(dev, t)
+    t = t or {}
+    return setmetatable({ dev = dev, level = t.level or 5, off = t.off, ready = false }, II)
+end
+function M.jf(t) return ii_voice('jf', t) end
+function M.wsyn(t) return ii_voice('wsyn', t) end
+
+function II:note_on(n, vel)
+    local m = ii[self.dev]
+    if not self.ready and self.dev == 'jf' then m.mode(1) end -- synthesis mode
+    self.ready = true
+    m.play_note(ntov(n), self.level * vel / 127)
+end
+
+function II:note_off(n)
+    if self.off then ii[self.dev].play_note(ntov(n), 0) end
+end
+
+
 --- the default channel map: live at boot and after midi.reset()
 function M.defaults()
     M.ch = {}
@@ -242,6 +267,8 @@ function M.defaults()
     M.ch[4]  = M.cc{ [16] = 1, [17] = 2, [18] = 3, [19] = 4 }
     M.ch[5]  = M.voice{ v8 = 1, gate = 2, vel = 3, cc = {[1] = 4} }
     M.ch[6]  = M.duo{}
+    M.ch[7]  = M.jf{}
+    M.ch[8]  = M.wsyn{}
     M.ch[10] = M.drums{}
 end
 
