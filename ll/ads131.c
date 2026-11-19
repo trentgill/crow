@@ -249,6 +249,20 @@ uint16_t ADS_Cmd( uint16_t command )
     return aRxBuffer[0];
 }
 
+// calibration accumulator: sums every raw sample of both channels.
+// written from the block ISR, armed and read from the main loop.
+static volatile uint32_t acc_skip = 0; // samples still to drop (settling)
+static volatile uint32_t acc_want = 0; // samples to sum
+static volatile uint32_t acc_n    = 0; // samples summed so far
+static volatile int32_t  acc_sum[2];   // 65536 * 32768 fits in 31 bits
+static inline void acc_push( int16_t a, int16_t b ){
+    if( acc_n >= acc_want ){ return; }
+    if( acc_skip ){ acc_skip--; return; }
+    acc_sum[0] += a;
+    acc_sum[1] += b;
+    acc_n++;
+}
+
 static float last[2] = {0.0,0.0};
 void ADC_UnpickleBlock( float*   unpickled
                       , uint16_t bsize
@@ -268,6 +282,7 @@ void ADC_UnpickleBlock( float*   unpickled
         return;
     }
     float* unpick = unpickled;
+    acc_push( ((int16_t*)aRxBuffer)[1], ((int16_t*)aRxBuffer)[2] );
     // Return current buf
     for( uint8_t j=0; j<adc_count; j++ ){
         // cast to signed -> cast to float -> scale -> shift
@@ -544,6 +559,7 @@ static void m4_unpickle( float* unpickled, uint16_t bsize )
         stor |= h[0];
         if( (h[0] & 0xFF00) != 0x2200 ){ adc_dbg.last_other = h[0]; }
         if( adc_cap_ch < 2 && adc_cap_n < adc_cap_len ){ adc_cap[adc_cap_n++] = (int16_t)h[1+adc_cap_ch]; }
+        acc_push( (int16_t)h[1], (int16_t)h[2] );
     }
     adc_dbg.frames += n;
     if( stor & 0x7F ){ // count flags per sample only when any were set
@@ -626,6 +642,30 @@ void ADC_CalibrateScalar( uint8_t channel, float scale )
 void ADC_CalibrateShift( uint8_t channel, float volts )
 {
     adc_calibrated_shift[channel] = 2.5 + volts;
+}
+
+void ADC_Average( uint32_t skip, uint32_t count )
+{
+    if( count > 65536 ){ count = 65536; }
+    BLOCK_IRQS(
+        acc_want   = 0; // stop the writer while resetting
+        acc_sum[0] = 0;
+        acc_sum[1] = 0;
+        acc_n      = 0;
+        acc_skip   = skip;
+        acc_want   = count;
+    );
+}
+
+int ADC_AverageResult( float* volts )
+{
+    if( !acc_want || acc_n < acc_want ){ return 0; }
+    for( int j=0; j<2; j++ ){
+        // the mean of the raw codes, then the same scale + shift as every sample
+        volts[j] = ((float)acc_sum[j] / (float)acc_n) * adc_calibrated_scalar[j]
+                 + adc_calibrated_shift[j];
+    }
+    return (int)acc_n;
 }
 
 float ADC_GetValue( uint8_t channel )

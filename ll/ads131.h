@@ -142,6 +142,11 @@ void ADC_UnpickleBlock( float*   unpickled
                       );
 float ADC_GetValue( uint8_t channel );
 
+// average every ADC sample: drop `skip` samples, then sum `count` (max 65536)
+void ADC_Average( uint32_t skip, uint32_t count );
+// 0 while still summing, else the sample count, with the mean of each input in volts[0..1]
+int ADC_AverageResult( float* volts );
+
 void ADC_CalibrateScalar( uint8_t channel, float scale );
 void ADC_CalibrateShift( uint8_t channel, float volts );
 

@@ -22,6 +22,7 @@
 #include "lib/io.h"         // IO_GetADC()
 #include "../ll/adda.h"     // CAL_*()
 #include "../ll/cal_ll.h"   // CAL_LL_ActiveChannel()
+#include "../ll/ads131.h"   // ADC_Average()
 #include "../ll/system.h"   // getUID_Word()
 #include "../ll/i2c.h"      // I2C_SetTimings(u8)
 #include "lib/events.h"     // event_t event_post()
@@ -746,6 +747,25 @@ static int _calibrate_set( lua_State* L )
     lua_pop(L, 3);
     return 0;
 }
+// calibrate_average( count [, skip] ): average the next `count` samples of both
+// inputs after dropping `skip`. calibrate_average() -> nil while running, else v1, v2
+static int _calibrate_average( lua_State* L )
+{
+    if( lua_gettop(L) == 0 ){
+        float v[2];
+        if( !ADC_AverageResult( v ) ){ lua_pushnil(L); return 1; }
+        lua_pushnumber( L, v[0] );
+        lua_pushnumber( L, v[1] );
+        return 2;
+    }
+    lua_Integer count = luaL_checkinteger( L, 1 );
+    lua_Integer skip  = luaL_optinteger( L, 2, 0 );
+    if( count < 1 ){ return luaL_error(L, "calibrate_average: count must be >= 1"); }
+    if( skip < 0 ){ skip = 0; }
+    ADC_Average( (uint32_t)skip, (uint32_t)count );
+    lua_settop(L, 0);
+    return 0;
+}
 static int _calibrate_save( lua_State* L )
 {
     uint32_t t = Lua_watchdog_exempt_begin(); // flash erase doesn't count
@@ -940,6 +960,7 @@ static const struct luaL_Reg libCrow[]=
     , { "calibrate_get"    , _calibrate_get    }
     , { "calibrate_set"    , _calibrate_set    }
     , { "calibrate_save"   , _calibrate_save   }
+    , { "calibrate_average", _calibrate_average }
         // clock
     , { "clock_cancel"             , _clock_cancel             }
     , { "clock_schedule_sleep"     , _clock_schedule_sleep     }
