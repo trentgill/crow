@@ -2,153 +2,192 @@
 -- utility for calibrating crow's CV i/o
 --
 -- keep druid open while running!
--- 
--- when the script starts, it will run the calibration automatically
--- input[1] and all outputs will be calibrated automatically
--- then you'll be prompted to add a patch cable
---    connect output[1] to input[2]
--- now the calibration will complete
--- if ALWAYS_TEST is true, you'll be prompted to remove the patch cable
---    test results will appear gradually
+--
+-- 1. remove every patch cable. calibration starts by itself:
+--    input[1], all 4 outputs and input[2]'s offset are calibrated through the
+--    internal mux, then the outputs are tested.
+-- 2. when asked, connect output[1] -> input[2]. input[2] is calibrated and tested.
+-- 3. when asked, move the cable to output[1] -> input[1]. input[1] is calibrated
+--    for its jack and tested. everything is saved if every test passed.
+--    you can then remove the cable.
+--
+-- why input[1] needs the cable: the mux reaches input[1] through its own series
+-- resistance, so a calibration through the mux reads the jack ~0.7% high
+-- (+40 cents at 5V). the mux is still the reference for the outputs.
 --
 -- re-run the calibration with: calibrate()
 -- run the test-suite with: test()
 -- print the raw offsets & scalars with: raw()
+--
+-- method: each channel is close to linear, so two readings solve its scale and
+-- offset directly. there is nothing to converge: a second pass changes nothing beyond noise.
+-- firmware with cal.average() averages every ADC sample (46.875kHz) in C,
+-- so a reading takes ~50ms. older firmware falls back to polling input[n].volts.
 
 
 -- settings
-local AUTOSTART   = true  -- if false, you can calibrate by typing: calibrate()
-local ALWAYS_TEST = true -- if true, the test() function will autorun after calibrate()
+local AUTOSTART  = true  -- if false, you can calibrate by typing: calibrate()
+local AUTOSAVE   = true  -- save to flash when every test passes. set false while debugging
+local ALWAYS_RAW = false -- print raw offset & scale values after calibrate()
 
--- debug: use when working on this script
-local AUTOSAVE    = true  -- set false while debugging to reduce flash write cycles
-local ALWAYS_RAW  = false -- set true to print raw offset & scale values after calibrate()
-local ITERATIONS  = 1     -- set higher than 1 to show that you have found the *correct* solution
+local SAMPLES = 2048  -- ADC samples per reading (43.7ms). 1024 matches the old 256-poll noise
+local SETTLE  = 0.005 -- seconds between changing a source and averaging
+local V_LO, V_HI = 0, 2.5 -- calibration points for the outputs and input[2]
 
-
---- these functions are generally unused
--- values seem to be accurate enough by simply measuring & calculating directly
--- no need to measure, update, re-measure (etc)
-
-function lerp(from, to, coeff)
-    return from + coeff*(to - from)
-end
-
--- diff_multiplier is 100 ~ 2000 or so. sets convergence rate / sensitivity
-function adaptive_filter(past, new, diff_multiplier)
-    local coeff = math.min(1, diff_multiplier * math.abs(past - new))
-    local dest = lerp(past, new, coeff)
-    return dest
-end
+local FAST = cal.average ~= nil
 
 
--- specifically tuned for minimal standard deviation across multiple calls
--- see: util/adda-measurement.lua for methodology
--- settling time increased for out[3]. limit ~12ms. 20ms for safety
-function read_avg(chan)
+--- measurement
+
+-- returns input[1], input[2] in volts. must be called inside a clock
+local function read_both()
+    if FAST then return cal.read(SAMPLES, SETTLE) end
+    -- older firmware: one new sample per block, so poll and average
     local reps = 256
-    local sum = 0
+    local a, b = 0, 0
     clock.sleep(0.02) -- input & output settling time
     for i=1,reps do
-        sum = sum + input[chan].volts -- accumulate readings
+        a = a + input[1].volts
+        b = b + input[2].volts
         clock.sleep(0.001)
     end
-    return sum / reps -- average
+    return a/reps, b/reps
 end
 
-function xvolts(ch, v)
+local function read(n)
+    local a, b = read_both()
+    return n == 2 and b or a
+end
+
+-- set output[ch] to v and every other output to 0
+local function xvolts(ch, v)
     for n=1,4 do
         output[n].volts = n==ch and v or 0
     end
 end
 
-function sample(t)
-    if t.volts then xvolts(t.source, t.volts) end -- set source voltage exclusively
-    cal.source(t.source) -- select source
-    return read_avg(t.input)
+-- the cal mux reaches input[1] through its own series resistance, and input[1]
+-- loads it unevenly (the UART-detect transistor turns on above ~0.5V). so
+-- input[1]'s calibration for its jack reads the mux a little differently.
+-- readings through the mux are rescaled against the mux's own ground & 2.5V
+local mux = {gnd = 0, k = 1}
+
+local function mux_raw(n, v)
+    xvolts(n, v)
+    cal.source(n)
+    return read(1)
 end
 
-function input_scale(n)
-    local gnd, vref
-    if n==1 then
-        gnd  = sample{input=n, source='gnd'}
-        vref = sample{input=n, source='2v5'}
-    else -- n==2
-        gnd  = sample{input=n, source=1, volts=0}
-        vref = sample{input=n, source=1, volts=2.5}
+-- input[1] through the cal mux, from output[n] at v, in reference volts
+local function via_mux(n, v)
+    return (mux_raw(n, v) - mux.gnd) * mux.k
+end
+
+-- measure the mux's ground & 2.5V reference with input[1]'s current calibration
+local function mux_reference()
+    xvolts(0, 0)
+    cal.source'gnd'
+    local gnd, in2 = read_both()
+    cal.source'2v5'
+    local vref = read(1)
+    mux.gnd, mux.k = gnd, 2.5 / (vref - gnd)
+    return gnd, vref, in2
+end
+
+-- input[1] through its jack, from output[1] at v. needs the cable
+local function via_jack1(v)
+    xvolts(1, v)
+    cal.source'2v5' -- with no cable input[1] reads 2.5V, never output[1]
+    return read(1)
+end
+
+-- input[2] through the patch cable, from output[1] at v
+local function via_cable(v)
+    xvolts(1, v)
+    cal.source'gnd'
+    return read(2)
+end
+
+
+--- exact two-point solutions
+-- each reading m was taken with the calibration currently in place
+
+-- adc: v = raw*k*scale + 2.5 + offset. readings m1, m2 of true volts x1, x2
+local function solve_input(n, x1, m1, x2, m2)
+    local c = cal.input[n]
+    local s0, o0 = c.scale, c.offset
+    local s = s0 * (x2 - x1) / (m2 - m1)
+    local o = x1 - 2.5 - (m1 - 2.5 - o0) * s / s0
+    c.scale, c.offset = s, o
+end
+
+-- adc offset only, from a reading m of 0V
+local function solve_input_offset(n, m)
+    cal.input[n].offset = cal.input[n].offset - m
+end
+
+-- dac: code = (v + offset)*k*scale. m1, m2 read back at requested volts v1, v2
+local function solve_output(n, v1, m1, v2, m2)
+    local c = cal.output[n]
+    local s0, o0 = c.scale, c.offset
+    local gain = (m2 - m1) / (v2 - v1) -- volts out per volt requested, now
+    c.scale = s0 / gain
+    c.offset = gain * (v1 + o0) - m1
+end
+
+
+--- jacks & cables
+
+local function out_of(lo, hi, v) return v < lo or v > hi end
+
+-- every jack whose cable breaks the internal paths. empty when none
+local function cables_in()
+    -- input[1]'s jack normals to the cal mux, each output's jack normals to the mux
+    xvolts(0, 0)
+    cal.source'2v5'
+    if out_of(1.5, 3.5, read(1)) then return {'input[1]'} end
+    local found = {}
+    for n=1,4 do
+        if out_of(-4, -2, via_mux(n, -3)) then table.insert(found, 'output['..n..']') end
     end
-
-    local past = cal.input[n].scale -- capture past scalar
-    local new = 2.5/(vref-gnd)      -- determine new scalar
-    new = new * past                -- account for past scalar
-
-    -- move toward solution
-    cal.input[n].scale = adaptive_filter(past, new, 1000)
-
-    print(string.format('input[%i].scale  = % 6.5f (% 6.5f, % 6.5f)',n,cal.input[n].scale,gnd,vref))
+    xvolts(0, 0)
+    return found
 end
 
-function input_offset(n)
-    local gnd
-    if n==1 then
-        gnd = sample{input=n, source='gnd'}
-    else -- n==2
-        gnd = sample{input=n, source=1, volts=0}
+local function await_no_cables()
+    local found = cables_in()
+    if #found == 0 then return end
+    print('\nremove the patch cable from: '..table.concat(found, ', '))
+    while #found > 0 do
+        clock.sleep(0.2)
+        found = cables_in()
     end
-
-    local past = cal.input[n].offset -- capture past offset
-    local new = gnd                  -- determine new offset
-    new = past - new                 -- account for past offset
-
-    -- move toward solution
-    cal.input[n].offset = adaptive_filter(past, new, 300)
-
-    print(string.format('input[%i].offset = % 6.5f (% 6.5f)',n,cal.input[n].offset,gnd))
+    print'ok!'
+    clock.sleep(1) -- let both ends of the cable come out
 end
 
-function output_scale(n)
-    local gnd  = sample{input=1, source=n, volts=0}
-    local vref = sample{input=1, source=n, volts=2.5}
-
-    local past = cal.output[n].scale -- capture past scalar
-    local new = 2.5/(vref-gnd)       -- determine new scalar
-    new = new * past                 -- account for past scalar
-
-    -- move toward solution
-    cal.output[n].scale = adaptive_filter(past, new, 1000)
-
-    print(string.format('output[%i].scale  = % 6.5f (% 6.5f, % 6.5f)',n,cal.output[n].scale,gnd,vref))
+-- output[1] -> input[2]: input[2] follows output[1]
+local function cable_out1_in2()
+    return not out_of(-4, -2, via_cable(-3)) and not out_of(2, 4, via_cable(3))
 end
 
-function output_offset(n)
-    local gnd = sample{input=1, source=n, volts=0}
-
-    local past = cal.output[n].offset -- capture past offset
-    local new = gnd                   -- determine new offset
-    new = new / cal.output[n].scale   -- account for scale being applied already
-    new = past - new                  -- account for past offset
-
-    -- move toward solution
-    cal.output[n].offset = adaptive_filter(past, new, 300)
-
-    print(string.format('output[%i].offset = % 6.5f (% 6.5f)',n,cal.output[n].offset,gnd))
+-- output[1] -> input[1]: input[1] follows output[1]
+local function cable_out1_in1()
+    return not out_of(-4, -2, via_jack1(-3)) and not out_of(2, 4, via_jack1(3))
 end
 
-function await_input(n)
-    if sample{input=n, source=1, volts=-3} > -2 then
-        if n == 1 then print '\ndisconnect all patch cables'
-        else print '\nconnect output[1] -> input[2]' end
-
-        while sample{input=n, source=1, volts=-3} > -2 do
-            tell('stream',n,input[n].volts)
-            clock.sleep(0.1)
-        end
-        print'ok!'
-        clock.sleep(1) -- wait 1 second to ensure both ends of cable are disconnected
-    end
+local function await_cable(found, msg)
+    if found() then return end
+    print('\n'..msg)
+    while not found() do clock.sleep(0.1) end
+    print'ok!'
+    clock.sleep(0.5) -- let the cable seat
 end
 
-function clear_cal_settings()
+
+--- calibration steps
+
+local function clear_cal_settings()
     for n=1,2 do
         cal.input[n].offset = 0
         cal.input[n].scale = 1.0
@@ -159,64 +198,137 @@ function clear_cal_settings()
     end
 end
 
-function find_error_in_cents(result, expected)
+-- input[1] against the mux reference. provisional: cal_input1_jack() replaces it
+local function cal_input1_mux()
+    local gnd, vref, in2 = mux_reference()
+    solve_input(1, 0, gnd, 2.5, vref)
+    solve_input_offset(2, in2) -- input[2]'s jack normals to ground: its offset comes free
+    mux.gnd, mux.k = 0, 1 -- input[1] now reads the mux exactly
+    print(string.format('input[1]  scale % 7.5f  offset % 7.5f  (% 6.4f % 6.4f) via mux'
+        , cal.input[1].scale, cal.input[1].offset, gnd, vref))
+end
+
+local function cal_output(n)
+    local lo = via_mux(n, V_LO)
+    local hi = via_mux(n, V_HI)
+    solve_output(n, V_LO, lo, V_HI, hi)
+    print(string.format('output[%i] scale % 7.5f  offset % 7.5f  (% 6.4f % 6.4f)'
+        , n, cal.output[n].scale, cal.output[n].offset, lo, hi))
+end
+
+-- input[1] for its jack, at 0V & 5V: exact at 0V, within ~1 cent from 0 to 9.5V.
+-- below 0V input[1] bends (the UART-detect transistor), so -2.5V reads ~10 cents low
+local J_LO, J_HI = 0, 5
+local function cal_input1_jack() -- needs output[1] -> input[1]
+    local lo = via_jack1(J_LO)
+    local hi = via_jack1(J_HI)
+    solve_input(1, J_LO, lo, J_HI, hi)
+    print(string.format('input[1]  scale % 7.5f  offset % 7.5f  (% 6.4f % 6.4f) via jack'
+        , cal.input[1].scale, cal.input[1].offset, lo, hi))
+end
+
+local function cal_input2() -- needs output[1] -> input[2]
+    local lo = via_cable(V_LO)
+    local hi = via_cable(V_HI)
+    solve_input(2, V_LO, lo, V_HI, hi)
+    print(string.format('input[2]  scale % 7.5f  offset % 7.5f  (% 6.4f % 6.4f)'
+        , cal.input[2].scale, cal.input[2].offset, lo, hi))
+end
+
+-- values no working unit produces (wrong cable, dead channel)
+local function implausible()
+    local bad = {}
+    local function chk(name, c)
+        if out_of(0.8, 1.2, c.scale) or out_of(-0.2, 0.2, c.offset) then
+            table.insert(bad, name)
+        end
+    end
+    for n=1,2 do chk('input['..n..']', cal.input[n]) end
+    for n=1,4 do chk('output['..n..']', cal.output[n]) end
+    return bad
+end
+
+
+--- tests
+
+local function cents(result, expected)
     return math.floor(0.5 + 1200*(result - expected))
+end
+
+local OUT_V = {-2.5, 0, 2.5,  5, 7.5} -- test voltages
+local OUT_E = {  30, 3,   5, 12,  30} -- allowable cents error at each voltage
+
+local function new_result()
+    local r = {pass = true, fails = {}}
+    function r.check(name, got, want, tol)
+        local e = cents(got, want)
+        if math.abs(e) > tol then
+            r.pass = false
+            table.insert(r.fails, name..' @'..want..'V out of range')
+        end
+        return e
+    end
+    return r
+end
+
+-- the outputs through the mux & input[2]'s ground, with no cables.
+-- input[1]'s view of the mux reference is printed, and sets the scale for the outputs
+local function test_internal(r)
+    print'\nvoltage listed to the nearest millivolt'
+    print'error amounts listed in cents beneath the readings'
+    print'  expect:   -2.5    0.0    2.5    5.0    7.5\n'
+
+    local gnd, vref, gnd2 = mux_reference()
+    if out_of(-0.05, 0.05, gnd) or out_of(0.97, 1.03, mux.k) then
+        r.pass = false
+        table.insert(r.fails, 'input[1] reads the mux reference far off')
+    end
+    print(string.format('mux ref            % 01.3f % 01.3f   (input[1], not a test)', gnd, vref))
+    local e3 = r.check('input[2]', gnd2, 0, 3)
+    print(string.format('input[2]           % 01.3f', gnd2))
+    print(string.format('              % 7d', e3))
+
+    for n=1,4 do
+        local t, e = {}, {}
+        for k,v in ipairs(OUT_V) do
+            t[k] = via_mux(n, v)
+            e[k] = r.check('output['..n..']', t[k], v, OUT_E[k])
+        end
+        print(string.format('output[%i]   % 01.3f % 01.3f % 01.3f % 01.3f % 01.3f',n
+             ,t[1],t[2],t[3],t[4],t[5]))
+        print(string.format('       % 7d % 7d % 7d % 7d % 7d',e[1],e[2],e[3],e[4],e[5]))
+    end
+    xvolts(0, 0)
+end
+
+-- an input against output[1] over the outputs' range, through a cable
+local function test_cable(r, name, via)
+    local t, e = {}, {}
+    for k,v in ipairs(OUT_V) do
+        t[k] = via(v)
+        e[k] = r.check(name, t[k], v, OUT_E[k])
+    end
+    print(string.format('%-11s % 01.3f % 01.3f % 01.3f % 01.3f % 01.3f'
+         ,name,t[1],t[2],t[3],t[4],t[5]))
+    print(string.format('       % 7d % 7d % 7d % 7d % 7d',e[1],e[2],e[3],e[4],e[5]))
+    xvolts(0, 0)
+end
+
+local function report(r)
+    if r.pass then
+        print('\n---- PASS ----')
+    else
+        print('\n!!!! FAIL !!!!')
+        print(table.concat(r.fails, ", "))
+    end
 end
 
 function test()
     clock.run(function()
-        -- ensure there's no cable remaining from calibration
-        await_input(1)
-
-        local pass = true -- assume true unless we see an error
-        local failmsgs = {}
-        -- 30, 3, 5, 12, 30
-
-        print'\nvoltage listed to the nearest millivolt'
-        print'error amounts listed in cents beneath the readings'
-        print'  expect:   -2.5    0.0    2.5    5.0    7.5\n'
-
-        -- input 1
-        local gnd  = sample{input=1, source='gnd'}
-        local vref = sample{input=1, source='2v5'}
-        local gnd_err  = find_error_in_cents(gnd, 0)
-        local vref_err = find_error_in_cents(vref, 2.5)
-        print(string.format('input[1]           % 01.3f % 01.3f',gnd, vref))
-        print(string.format('              % 7d % 7d',gnd_err,vref_err))
-        if math.abs(gnd_err) > 3 then pass = false end
-        if math.abs(vref_err) > 3 then pass = false end
-
-        -- input 2
-        gnd = sample{input=2, source='gnd'}
-        gnd_err = find_error_in_cents(gnd, 0)
-        print(string.format('input[2]           % 01.3f', gnd))
-        print(string.format('              % 7d',gnd_err))
-        if math.abs(gnd_err) > 3 then pass = false end
-
-        for n=1,4 do
-            local V = {-2.5, 0, 2.5,  5, 7.5} -- test voltages
-            local E = {  30, 3,   5, 12,  30} -- allowable cents error at each voltage
-            local t = {} -- test results
-            local e = {} -- error calculation in cents
-            for k,v in ipairs(V) do
-                t[k] = sample{input=1, source=n, volts = v}
-                e[k] = find_error_in_cents(t[k], v)
-                if math.abs(e[k]) > E[k] then
-                    pass = false
-                    table.insert(failmsgs, 'output['..n..'] @'..v..'V out of range')
-                end
-            end
-            print(string.format('output[%i]   % 01.3f % 01.3f % 01.3f % 01.3f % 01.3f',n
-                 ,t[1],t[2],t[3],t[4],t[5]))
-            print(string.format('       % 7d % 7d % 7d % 7d % 7d'
-                 ,e[1],e[2],e[3],e[4],e[5]))
-        end
-        if pass then
-            print('\n---- PASS ----')
-        else
-            print('\n!!!! FAIL !!!!')
-            print(table.concat(failmsgs, ", "))
-        end
+        await_no_cables()
+        local r = new_result()
+        test_internal(r)
+        report(r)
     end)
 end
 
@@ -233,36 +345,48 @@ function raw()
     pprintset'output'
 end
 
+local function elapsed(t0)
+    print(string.format('(%.2fs)', (time() - t0) / 1000))
+end
 
 function calibrate()
     clock.run( function()
+        if not FAST then print'(older firmware: each reading averages slowly)' end
+        await_no_cables()
+        local t0 = time()
+        local r = new_result()
+
         clear_cal_settings() -- clear everything before we start
+        cal_input1_mux()
+        for n=1,4 do cal_output(n) end
+        test_internal(r)
+        elapsed(t0)
 
-        -- input 1
-        await_input(1)
-        for i=1,ITERATIONS do
-            input_scale(1)
-            input_offset(1)
+        await_cable(cable_out1_in2, 'connect output[1] -> input[2]')
+        t0 = time()
+        cal_input2()
+        test_cable(r, 'input[2]', via_cable)
+        elapsed(t0)
+
+        await_cable(cable_out1_in1, 'move the cable to output[1] -> input[1]')
+        t0 = time()
+        cal_input1_jack()
+        test_cable(r, 'input[1]', via_jack1)
+        elapsed(t0)
+
+        local bad = implausible()
+        if #bad > 0 then
+            r.pass = false
+            table.insert(r.fails, 'implausible calibration for '..table.concat(bad, ', '))
         end
+        report(r)
 
-        -- outputs
-        for i=1,ITERATIONS do
-            for n=1,4 do
-                output_scale(n)
-                output_offset(n)
-            end
+        if ALWAYS_RAW then raw() end
+        if AUTOSAVE then
+            if r.pass then cal.save()
+            else print'calibration NOT saved. fix the fault and run calibrate(), or keep it with cal.save()' end
         end
-
-        -- input 2
-        await_input(2)
-        for i=1,ITERATIONS do
-            input_scale(2)
-            input_offset(2)
-        end
-
-        if AUTOSAVE    then cal.save() end
-        if ALWAYS_RAW  then raw() end
-        if ALWAYS_TEST then test() end
+        print'you can remove the patch cable'
     end)
 end
 

@@ -15,6 +15,10 @@
 
 -- cal.save() -- write updated scale & offset values
 
+-- v1, v2 = cal.read() -- mean of both inputs over every ADC sample (inside a clock)
+-- v1, v2 = cal.read(count, settle) -- average `count` samples after `settle` seconds
+-- cal.average(count, skip) / cal.average() -- the same without waiting: nil until done
+
 Cal = {
     input = {},
     output = {},
@@ -28,7 +32,20 @@ Cal = {
     },
     save = calibrate_save,
     source = calibrate_source,
+    average = calibrate_average,
+    rate = 46875, -- ADC samples per second
 }
+
+-- must be called from inside a clock coroutine
+function Cal.read(count, settle)
+    calibrate_average(count or 2048, math.floor((settle or 0.005) * Cal.rate + 0.5))
+    local a, b
+    repeat
+        clock.sleep(0.001)
+        a, b = calibrate_average()
+    until a
+    return a, b
+end
 
 function Cal.new_cal(chan)
     return setmetatable({chan = chan}, Cal.mt)
